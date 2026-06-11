@@ -1,12 +1,14 @@
 # Eigene Sprites für die Gebäude
 
-> **Hinweis:** Das Spiel wird bereits mit fertigen Neon-Sprites für alle
-> Gebäude ausgeliefert (in `assets/buildings/`). Diese Anleitung brauchst
-> du nur, wenn du einzelne Sprites **austauschen** oder für neue Gebäude
-> **eigene** erstellen willst. Einfach die jeweilige PNG-Datei ersetzen –
-> Regeln siehe unten. Die Straße hat kein PNG: Sie wird vom Code als
-> dunkler Asphalt mit Neon-Randstreifen gezeichnet (`building_node.gd`,
-> Funktion `_draw_road`).
+> **Hinweis:** Das Spiel wird bereits mit fertigen Sprites für alle
+> Gebäude ausgeliefert (in `assets/buildings/`) - im **minimalistischen
+> Low-Poly-Stil**: flache Farbflächen, klare Silhouetten, wenig Detail,
+> damit Gebäude auch beim Rauszoomen gut erkennbar bleiben. Diese
+> Anleitung brauchst du nur, wenn du einzelne Sprites **austauschen**
+> oder für neue Gebäude **eigene** erstellen willst. Einfach die
+> jeweilige PNG-Datei ersetzen - Regeln siehe unten. Die Straße hat
+> kein PNG: Sie wird vom Code als schmale Fahrbahn gezeichnet
+> (`building_node.gd`, Funktion `_draw_road`).
 
 Das Spiel ist im **2D-Modus** von Godot gebaut (kein 3D!). Der räumliche
 Look entsteht durch die isometrische Perspektive – man nennt das 2.5D.

@@ -147,7 +147,7 @@ func _draw() -> void:
 
 			if tiles.is_empty():
 				## Fallback ohne Texturen: flache Farben.
-				var color := Color(0.32, 0.31, 0.30) if in_city else Color(0.10, 0.18, 0.11)
+				var color := Color(0.78, 0.76, 0.72) if in_city else Color(0.55, 0.72, 0.45)
 				var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
 				var bottom := top + Vector2(0, TILE_HALF_H * 2)
 				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
@@ -157,15 +157,16 @@ func _draw() -> void:
 			## Variante deterministisch aus der Zellposition wählen
 			## (sieht zufällig aus, bleibt aber bei jedem Neuzeichnen gleich).
 			var variant: int = posmod(x * 7 + y * 13 + x * y, tiles.size())
-			var tint := Color.WHITE if in_city else Color(0.55, 0.62, 0.55)
+			## Umland nur ganz leicht abdunkeln - heller Tageslicht-Look.
+			var tint := Color.WHITE if in_city else Color(0.82, 0.88, 0.8)
 			draw_texture_rect(tiles[variant],
 					Rect2(top.x - TILE_HALF_W, top.y, TILE_HALF_W * 2, TILE_HALF_H * 2),
 					false, tint)
 
 	## Das Bau-Raster wird NUR im Bau-/Abrissmodus eingeblendet -
-	## im normalen Spiel bleibt der Rasen schön sauber.
+	## im normalen Spiel bleibt der Boden schön sauber.
 	if current_mode != Mode.NONE:
-		var line_color := Color(1.0, 1.0, 1.0, 0.13)
+		var line_color := Color(0.0, 0.0, 0.0, 0.18)
 		for x in range(s):
 			for y in range(s):
 				var top := cell_to_world(Vector2i(x, y))

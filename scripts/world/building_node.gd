@@ -158,7 +158,8 @@ func _draw() -> void:
 ## "Arm". Da alle Arme dieselbe Farbe haben und exakt aneinander anschließen,
 ## entsteht ein durchgehendes Straßenband ohne Nahtstellen.
 func _draw_road() -> void:
-	var asphalt := Color(0.16, 0.16, 0.18)
+	## Mittelgrauer Asphalt - passt zum hellen Tageslicht-Look.
+	var asphalt := Color(0.38, 0.39, 0.42)
 	var center := Vector2(0, TILE_HALF_H)
 
 	## Mittelstück: kleine Raute (50 % der Zellgröße) in der Zellmitte.
