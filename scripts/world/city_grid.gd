@@ -97,9 +97,11 @@ func world_to_cell(world_pos: Vector2) -> Vector2i:
 
 func _draw() -> void:
 	var s := get_map_size()
-	var grass_a := Color(0.36, 0.55, 0.36)
-	var grass_b := Color(0.33, 0.52, 0.34)
-	var line_color := Color(1, 1, 1, 0.06)
+	## Dunkler, futuristischer Boden: Auf dunklem Untergrund leuchten die
+	## Neon-Sprites der Gebäude deutlich besser ("Nacht-Stadt"-Look).
+	var grass_a := Color(0.10, 0.16, 0.13)
+	var grass_b := Color(0.09, 0.14, 0.12)
+	var line_color := Color(0.3, 0.9, 0.7, 0.10)
 
 	for x in range(s):
 		for y in range(s):
