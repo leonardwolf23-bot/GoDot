@@ -152,21 +152,45 @@ func _draw() -> void:
 			draw_line(left + y_offset, bottom + y_offset, glow, 1.0)
 
 
-## Zeichnet eine schlichte schwarze Straße: dunkler Asphalt mit dezenter
-## grauer Kante, damit man einzelne Zellen noch erkennen kann.
+## Zeichnet eine echte FAHRBAHN: nur halb so breit wie die Zelle und ohne
+## sichtbare Abschnitte. Der Trick: Jede Straßenzelle schaut nach, welche
+## Nachbarzellen ebenfalls Straßen sind, und zeichnet nur dorthin einen
+## "Arm". Da alle Arme dieselbe Farbe haben und exakt aneinander anschließen,
+## entsteht ein durchgehendes Straßenband ohne Nahtstellen.
 func _draw_road() -> void:
-	var top := Vector2(0, 0)
-	var right := Vector2(TILE_HALF_W, TILE_HALF_H)
-	var bottom := Vector2(0, TILE_HALF_H * 2)
-	var left := Vector2(-TILE_HALF_W, TILE_HALF_H)
+	var asphalt := Color(0.16, 0.16, 0.18)
+	var center := Vector2(0, TILE_HALF_H)
 
-	## Asphalt-Fläche (fast schwarz).
-	draw_colored_polygon(PackedVector2Array([top, right, bottom, left]),
-			Color(0.07, 0.07, 0.08))
+	## Mittelstück: kleine Raute (50 % der Zellgröße) in der Zellmitte.
+	draw_colored_polygon(PackedVector2Array([
+		center + Vector2(0, -TILE_HALF_H * 0.5),
+		center + Vector2(TILE_HALF_W * 0.5, 0),
+		center + Vector2(0, TILE_HALF_H * 0.5),
+		center + Vector2(-TILE_HALF_W * 0.5, 0),
+	]), asphalt)
 
-	## Sehr dezente Kante, kaum sichtbar.
-	draw_polyline(PackedVector2Array([top, right, bottom, left, top]),
-			Color(0.22, 0.22, 0.25, 0.5), 1.0)
+	## Welche Nachbarn sind ebenfalls Straßen? (Frage ans Eltern-Grid.)
+	var grid := get_parent()
+	if not (grid is CityGrid):
+		return
+
+	## Für jede Richtung: Zellversatz, Mittelpunkt der gemeinsamen Kante
+	## und der "Viertel-Kanten-Vektor" (halbe Fahrbahnbreite).
+	var directions := [
+		[Vector2i(0, -1), Vector2(TILE_HALF_W * 0.5, TILE_HALF_H * 0.5), Vector2(TILE_HALF_W * 0.25, TILE_HALF_H * 0.25)],
+		[Vector2i(1, 0), Vector2(TILE_HALF_W * 0.5, TILE_HALF_H * 1.5), Vector2(-TILE_HALF_W * 0.25, TILE_HALF_H * 0.25)],
+		[Vector2i(0, 1), Vector2(-TILE_HALF_W * 0.5, TILE_HALF_H * 1.5), Vector2(-TILE_HALF_W * 0.25, -TILE_HALF_H * 0.25)],
+		[Vector2i(-1, 0), Vector2(-TILE_HALF_W * 0.5, TILE_HALF_H * 0.5), Vector2(TILE_HALF_W * 0.25, -TILE_HALF_H * 0.25)],
+	]
+	for dir in directions:
+		if not grid.roads.has(cell + dir[0]):
+			continue
+		var mid: Vector2 = dir[1]
+		var v: Vector2 = dir[2]
+		## Arm vom Mittelstück bis zur Zellkante (dort übernimmt der Nachbar).
+		draw_colored_polygon(PackedVector2Array([
+			center - v, mid - v, mid + v, center + v,
+		]), asphalt)
 
 
 ## Zeichnet das PNG-Sprite passgenau auf die Grundfläche des Gebäudes.

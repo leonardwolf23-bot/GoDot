@@ -39,6 +39,10 @@ var _crisis_label: Label
 var _hover_panel: PanelContainer
 var _hover_label: Label
 
+## Knappe Rohstoffe pulsieren rot: Welche sind gerade kritisch?
+var _critical := {"wasser": false, "essen": false, "satoshis": false, "energie": false}
+var _pulse_time: float = 0.0
+
 
 ## Wird von game.gd aufgerufen, BEVOR das HUD benutzt wird.
 func setup(p_grid: CityGrid) -> void:
@@ -54,6 +58,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_create_top_bar()
+	_create_speed_controls()
 	_create_side_buttons()
 	_create_notification_label()
 	_create_crisis_label()
@@ -126,12 +131,29 @@ func _create_top_bar() -> void:
 		bar.add_child(label)
 		_labels[entry[0]] = label
 
-	## Geschwindigkeits-Buttons: Pause, 1x, 2x, 3x.
+
+## Geschwindigkeits-Buttons: Pause, 1x, 2x, 3x.
+## Sitzen unten rechts neben dem Baumenü - da hat man sie beim Bauen direkt
+## unter der Maus.
+func _create_speed_controls() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	panel.offset_left = -200.0
+	panel.offset_right = -12.0
+	panel.offset_top = -170.0
+	panel.offset_bottom = -126.0
+	add_child(panel)
+
+	var bar := HBoxContainer.new()
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(bar)
+
 	var speeds := [["⏸", 0.0], ["1x", 1.0], ["2x", 2.0], ["3x", 3.0]]
 	for s in speeds:
 		var btn := Button.new()
 		btn.text = s[0]
 		btn.toggle_mode = true
+		btn.custom_minimum_size = Vector2(40, 34)
 		btn.pressed.connect(func(): GameState.set_speed(s[1]))
 		bar.add_child(btn)
 		_speed_buttons.append(btn)
@@ -164,12 +186,13 @@ func _refresh_top_bar() -> void:
 	else:
 		vegan_label.add_theme_color_override("font_color", Color(0.95, 0.3, 0.3))
 
-	## Strom-Warnung rot einfärben.
-	var energy_label: Label = _labels["energie"]
-	if report["energie_bedarf"] > report["energie_leistung"]:
-		energy_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.3))
-	else:
-		energy_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	## Knappheit erkennen - diese Anzeigen pulsieren dann rot (siehe _process).
+	## Wasser/Essen: weniger als 3 Tagesverbräuche auf Lager = kritisch.
+	var pop := float(maxi(GameState.population, 1))
+	_critical["wasser"] = r["wasser"] < pop * 3.0
+	_critical["essen"] = r["essen"] < pop * 3.0
+	_critical["satoshis"] = r["satoshis"] < 100.0
+	_critical["energie"] = report["energie_bedarf"] > report["energie_leistung"]
 
 	_crisis_label.visible = GameState.vegan_share < GameData.VEGAN_CRISIS_THRESHOLD \
 			and not GameState.is_game_over
@@ -374,3 +397,18 @@ func _process(delta: float) -> void:
 	## Tooltip folgt dem Mauszeiger.
 	if _hover_panel.visible:
 		_position_hover_panel()
+
+	## Kritische Rohstoffe pulsieren rot (Sinus zwischen Hellrot und Weiß).
+	_pulse_time += delta
+	var pulse := Color(1.0, 0.55, 0.5).lerp(Color(1.0, 0.15, 0.1),
+			0.5 + 0.5 * sin(_pulse_time * 6.0))
+	for key in _critical:
+		if not _labels.has(key):
+			continue
+		var label: Label = _labels[key]
+		if _critical[key]:
+			label.add_theme_color_override("font_color", pulse)
+		elif key == "energie":
+			label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		else:
+			label.add_theme_color_override("font_color", Color.WHITE)

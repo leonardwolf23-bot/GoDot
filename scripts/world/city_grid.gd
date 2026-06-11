@@ -47,12 +47,15 @@ var _dragging: bool = false
 ## Über welchem Gebäude die Maus gerade schwebt (für den Hover-Tooltip).
 var _hovered_building: BuildingNode = null
 
-## Rasen-Kacheln (Varianten gegen sichtbare Wiederholung).
+## Boden-Kacheln (Varianten gegen sichtbare Wiederholung):
+##   - Stadt:   rustikales Pflaster mit Grasfugen
+##   - Umland:  Rasen (abgedunkelt)
+var _pavement_tiles: Array[Texture2D] = []
 var _grass_tiles: Array[Texture2D] = []
 
-## Wie viele Zellen Rasen ÜBER den Kartenrand hinaus gezeichnet werden,
+## Wie viele Zellen Boden ÜBER den Kartenrand hinaus gezeichnet werden,
 ## damit die Welt randlos wirkt (dort kann man nicht bauen).
-const GROUND_OVERSCAN := 18
+const GROUND_OVERSCAN := 30
 
 
 func _ready() -> void:
@@ -60,11 +63,14 @@ func _ready() -> void:
 	GameState.region_claimed.connect(func(_id): queue_redraw())
 	## Fertiggestellte Baustellen optisch in echte Gebäude verwandeln.
 	GameState.building_completed.connect(_on_building_completed)
-	## Rasen-Kacheln laden (mit Fallback auf Flächenfarben, falls sie fehlen).
+	## Boden-Kacheln laden (mit Fallback auf Flächenfarben, falls sie fehlen).
 	for i in range(3):
-		var tex := _load_texture("res://assets/tiles/grass_%d.png" % i)
-		if tex != null:
-			_grass_tiles.append(tex)
+		var pavement := _load_texture("res://assets/tiles/pavement_%d.png" % i)
+		if pavement != null:
+			_pavement_tiles.append(pavement)
+		var grass := _load_texture("res://assets/tiles/grass_%d.png" % i)
+		if grass != null:
+			_grass_tiles.append(grass)
 
 
 ## Lädt eine Textur - auch wenn Godot sie noch nicht importiert hat.
@@ -84,7 +90,7 @@ func _load_texture(path: String) -> Texture2D:
 
 ## Kantenlänge der quadratischen Karte in Zellen.
 func get_map_size() -> int:
-	return 16 + 2 * GameState.claimed_regions.size()
+	return 24 + 2 * GameState.claimed_regions.size()
 
 
 ## Liegt die Zelle innerhalb der aktuellen Karte?
@@ -129,17 +135,19 @@ func world_to_cell(world_pos: Vector2) -> Vector2i:
 func _draw() -> void:
 	var s := get_map_size()
 
-	## Der Rasen wird weit ÜBER den Kartenrand hinaus gezeichnet, damit die
-	## Welt kein sichtbares Ende hat. Außerhalb des bebaubaren Bereichs wird
-	## er abgedunkelt - so sieht man trotzdem, wo die Stadtgrenze liegt.
+	## Der Boden wird weit ÜBER den Kartenrand hinaus gezeichnet, damit die
+	## Welt kein sichtbares Ende hat:
+	##   - Stadtgebiet  = rustikales Pflaster (hier darf gebaut werden)
+	##   - Umland       = abgedunkelter Rasen (Natur, noch nicht erschlossen)
 	for x in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
 		for y in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
 			var in_city := x >= 0 and y >= 0 and x < s and y < s
 			var top := cell_to_world(Vector2i(x, y))
+			var tiles: Array[Texture2D] = _pavement_tiles if in_city else _grass_tiles
 
-			if _grass_tiles.is_empty():
+			if tiles.is_empty():
 				## Fallback ohne Texturen: flache Farben.
-				var color := Color(0.16, 0.30, 0.16) if in_city else Color(0.09, 0.17, 0.10)
+				var color := Color(0.32, 0.31, 0.30) if in_city else Color(0.10, 0.18, 0.11)
 				var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
 				var bottom := top + Vector2(0, TILE_HALF_H * 2)
 				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
@@ -148,9 +156,9 @@ func _draw() -> void:
 
 			## Variante deterministisch aus der Zellposition wählen
 			## (sieht zufällig aus, bleibt aber bei jedem Neuzeichnen gleich).
-			var variant: int = posmod(x * 7 + y * 13 + x * y, _grass_tiles.size())
-			var tint := Color.WHITE if in_city else Color(0.45, 0.5, 0.47)
-			draw_texture_rect(_grass_tiles[variant],
+			var variant: int = posmod(x * 7 + y * 13 + x * y, tiles.size())
+			var tint := Color.WHITE if in_city else Color(0.55, 0.62, 0.55)
+			draw_texture_rect(tiles[variant],
 					Rect2(top.x - TILE_HALF_W, top.y, TILE_HALF_W * 2, TILE_HALF_H * 2),
 					false, tint)
 
@@ -376,6 +384,19 @@ func _spawn_building_visual(building_id: String, cell: Vector2i,
 			if building_id == "strasse":
 				roads[c] = true
 
+	## Angrenzende Straßen müssen ihre "Arme" neu zeichnen,
+	## damit das Straßenband nahtlos zusammenwächst.
+	if building_id == "strasse":
+		_redraw_adjacent_roads(cell)
+
+
+## Zeichnet alle Straßen rund um eine Zelle neu (für nahtlose Übergänge).
+func _redraw_adjacent_roads(cell: Vector2i) -> void:
+	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var n: Vector2i = cell + offset
+		if roads.has(n) and occupied.has(n):
+			occupied[n].queue_redraw()
+
 
 ## Eine Baustelle ist fertig geworden: Sprite auf das echte Gebäude umschalten.
 func _on_building_completed(cell: Vector2i) -> void:
@@ -415,11 +436,14 @@ func _try_demolish(cell: Vector2i) -> void:
 	GameState.unregister_building(node.cell)
 
 	## Alle belegten Zellen freigeben.
+	var was_road := node.building_id == "strasse"
 	for x in range(node.size.x):
 		for y in range(node.size.y):
 			var c: Vector2i = node.cell + Vector2i(x, y)
 			occupied.erase(c)
 			roads.erase(c)
+			if was_road:
+				_redraw_adjacent_roads(c)
 	node.queue_free()
 
 

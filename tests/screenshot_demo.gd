@@ -7,6 +7,25 @@ func _ready() -> void:
 	GameState.new_game("vegan_gains")
 	GameState.set_speed(0.0)
 
+	## Hintergrundbild wie in der echten Spiel-Szene.
+	var bg_path := "res://assets/backgrounds/horizon.jpg"
+	if ResourceLoader.exists(bg_path) or FileAccess.file_exists(bg_path):
+		var layer := CanvasLayer.new()
+		layer.layer = -10
+		add_child(layer)
+		var rect := TextureRect.new()
+		var tex: Texture2D
+		if ResourceLoader.exists(bg_path):
+			tex = load(bg_path)
+		else:
+			tex = ImageTexture.create_from_image(
+					Image.load_from_file(ProjectSettings.globalize_path(bg_path)))
+		rect.texture = tex
+		rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		layer.add_child(rect)
+
 	var grid := CityGrid.new()
 	add_child(grid)
 	## Karte künstlich vergrößern für die Demo.
@@ -58,7 +77,7 @@ func _ready() -> void:
 	var cam := Camera2D.new()
 	add_child(cam)
 	cam.position = grid.cell_to_world(center + Vector2i(0, 2))
-	cam.zoom = Vector2(1.4, 1.4)
+	cam.zoom = Vector2(1.5, 1.5)
 	cam.make_current()
 
 	## Ein paar Frames rendern lassen, dann Screenshot speichern.
