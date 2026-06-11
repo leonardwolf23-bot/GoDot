@@ -47,15 +47,20 @@ var _dragging: bool = false
 ## Über welchem Gebäude die Maus gerade schwebt (für den Hover-Tooltip).
 var _hovered_building: BuildingNode = null
 
-## Boden-Kacheln (Varianten gegen sichtbare Wiederholung):
-##   - Stadt:   rustikales Pflaster mit Grasfugen
-##   - Umland:  Rasen (abgedunkelt)
-var _pavement_tiles: Array[Texture2D] = []
-var _grass_tiles: Array[Texture2D] = []
+## Boden-Texturen: EINE durchgehende, nahtlose Textur pro Bereich.
+## Früher bestand der Boden aus tausenden Einzel-Kacheln - deren minimale
+## Helligkeitsunterschiede erzeugten ein sichtbares Rauten-Muster.
+## Jetzt wird der Boden als EINE große Fläche mit wiederholender Textur
+## gezeichnet: keine Kachelgrenzen -> kein Muster.
+var _pavement_base: Texture2D = null
+var _grass_base: Texture2D = null
 
 ## Wie viele Zellen Boden ÜBER den Kartenrand hinaus gezeichnet werden,
 ## damit die Welt randlos wirkt (dort kann man nicht bauen).
 const GROUND_OVERSCAN := 30
+
+## Nach wie vielen Welt-Pixeln sich die Bodentextur wiederholt.
+const GROUND_TEX_SCALE := 230.0
 
 
 func _ready() -> void:
@@ -63,14 +68,12 @@ func _ready() -> void:
 	GameState.region_claimed.connect(func(_id): queue_redraw())
 	## Fertiggestellte Baustellen optisch in echte Gebäude verwandeln.
 	GameState.building_completed.connect(_on_building_completed)
-	## Boden-Kacheln laden (mit Fallback auf Flächenfarben, falls sie fehlen).
-	for i in range(3):
-		var pavement := _load_texture("res://assets/tiles/pavement_%d.png" % i)
-		if pavement != null:
-			_pavement_tiles.append(pavement)
-		var grass := _load_texture("res://assets/tiles/grass_%d.png" % i)
-		if grass != null:
-			_grass_tiles.append(grass)
+	## WICHTIG: Texturen über die Polygon-Ränder hinaus wiederholen lassen
+	## (sonst würde die Bodentextur nur einmal gezeichnet statt gekachelt).
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	## Boden-Texturen laden (mit Fallback auf Flächenfarben, falls sie fehlen).
+	_pavement_base = _load_texture("res://assets/tiles/pavement_base.png")
+	_grass_base = _load_texture("res://assets/tiles/grass_base.png")
 
 
 ## Lädt eine Textur - auch wenn Godot sie noch nicht importiert hat.
@@ -137,31 +140,13 @@ func _draw() -> void:
 
 	## Der Boden wird weit ÜBER den Kartenrand hinaus gezeichnet, damit die
 	## Welt kein sichtbares Ende hat:
-	##   - Stadtgebiet  = rustikales Pflaster (hier darf gebaut werden)
-	##   - Umland       = abgedunkelter Rasen (Natur, noch nicht erschlossen)
-	for x in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
-		for y in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
-			var in_city := x >= 0 and y >= 0 and x < s and y < s
-			var top := cell_to_world(Vector2i(x, y))
-			var tiles: Array[Texture2D] = _pavement_tiles if in_city else _grass_tiles
-
-			if tiles.is_empty():
-				## Fallback ohne Texturen: flache Farben.
-				var color := Color(0.78, 0.76, 0.72) if in_city else Color(0.55, 0.72, 0.45)
-				var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
-				var bottom := top + Vector2(0, TILE_HALF_H * 2)
-				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
-				draw_colored_polygon(PackedVector2Array([top, right, bottom, left]), color)
-				continue
-
-			## Variante deterministisch aus der Zellposition wählen
-			## (sieht zufällig aus, bleibt aber bei jedem Neuzeichnen gleich).
-			var variant: int = posmod(x * 7 + y * 13 + x * y, tiles.size())
-			## Umland nur ganz leicht abdunkeln - heller Tageslicht-Look.
-			var tint := Color.WHITE if in_city else Color(0.82, 0.88, 0.8)
-			draw_texture_rect(tiles[variant],
-					Rect2(top.x - TILE_HALF_W, top.y, TILE_HALF_W * 2, TILE_HALF_H * 2),
-					false, tint)
+	##   - Umland (zuerst, liegt unten) = helles Gras
+	##   - Stadtgebiet (darüber)        = helles Pflaster (hier darf gebaut werden)
+	## Beide Flächen sind je EIN großes Polygon mit durchlaufender Textur.
+	_draw_ground_diamond(-GROUND_OVERSCAN, s + GROUND_OVERSCAN, _grass_base,
+			Color(0.88, 0.94, 0.86), Color(0.58, 0.74, 0.48))
+	_draw_ground_diamond(0, s, _pavement_base,
+			Color.WHITE, Color(0.78, 0.76, 0.72))
 
 	## Das Bau-Raster wird NUR im Bau-/Abrissmodus eingeblendet -
 	## im normalen Spiel bleibt der Boden schön sauber.
@@ -175,6 +160,32 @@ func _draw() -> void:
 				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
 				draw_polyline(PackedVector2Array([top, right, bottom, left, top]),
 						line_color, 1.0)
+
+
+## Zeichnet eine große Boden-Raute von Zelle (from,from) bis (to,to)
+## als EIN Polygon mit nahtlos wiederholender Textur.
+func _draw_ground_diamond(from: int, to: int, texture: Texture2D,
+		tint: Color, fallback_color: Color) -> void:
+	## Die vier Eckpunkte der Gesamtfläche in Weltkoordinaten.
+	var points := PackedVector2Array([
+		cell_to_world(Vector2i(from, from)),   ## obere Ecke
+		cell_to_world(Vector2i(to, from)),     ## rechte Ecke
+		cell_to_world(Vector2i(to, to)),       ## untere Ecke
+		cell_to_world(Vector2i(from, to)),     ## linke Ecke
+	])
+
+	if texture == null:
+		draw_colored_polygon(points, fallback_color)
+		return
+
+	## UV-Koordinaten = Weltposition geteilt durch die Wiederholgröße.
+	## Werte über 1.0 lassen die Textur dank TEXTURE_REPEAT_ENABLED kacheln -
+	## EINE fortlaufende Fläche, keine sichtbaren Einzelkacheln.
+	var uvs := PackedVector2Array()
+	for p in points:
+		uvs.append(p / GROUND_TEX_SCALE)
+	var colors := PackedColorArray([tint, tint, tint, tint])
+	draw_polygon(points, colors, uvs, texture)
 
 
 # ---------------------------------------------------------------------------
