@@ -85,6 +85,13 @@ godot --headless --path . res://tests/sim_test.tscn
 
 Erwartete Ausgabe: `ALLE 51 TESTS BESTANDEN ✓`
 
+## Eigene Grafiken
+
+Lege ein PNG mit transparentem Hintergrund unter `assets/buildings/` ab,
+benannt nach der Gebäude-ID (z. B. `wohnmodul.png`) – das Spiel benutzt es
+automatisch statt des gezeichneten Quaders. Alle Regeln und Werkzeuge:
+[`docs/SPRITES.md`](docs/SPRITES.md).
+
 ## Weiterlesen
 
 Die komplette, anfängerfreundliche Erklärung **aller** Systeme (Grid-Mathematik,

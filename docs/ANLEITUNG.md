@@ -653,11 +653,12 @@ verknüpfst du sie mit deinem neuen Gebäude.
 
 ### Rezept C: Echte Grafiken statt gezeichneter Quader
 
-Nur `building_node.gd` anfassen: Ersetze den Inhalt von `_draw()` durch
-ein `Sprite2D` mit deiner Textur (z. B. aus dem kostenlosen
-[Kenney Isometric Pack](https://kenney.nl/assets/isometric-buildings-1)).
-Der gesamte Rest des Spiels bleibt unverändert – genau dafür ist die
-Trennung von Logik und Darstellung da.
+Schon eingebaut! Lege einfach ein PNG mit transparentem Hintergrund unter
+`assets/buildings/` ab, benannt nach der Gebäude-ID (z. B.
+`wohnmodul.png`) – das Spiel erkennt und benutzt es automatisch, inklusive
+der grün/roten Bauvorschau. Alle Regeln (Größen, Ausrichtung) und
+Werkzeug-Empfehlungen (Kenney-Gratis-Assets, Piskel, KI-Generatoren)
+stehen in [`SPRITES.md`](SPRITES.md).
 
 ### Weitere Ideen, für die das Gerüst vorbereitet ist
 

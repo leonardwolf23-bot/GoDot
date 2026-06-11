@@ -24,12 +24,30 @@ var size: Vector2i = Vector2i.ONE
 var is_ghost: bool = false
 var ghost_valid: bool = true
 
+## Optionales Sprite: Liegt eine Bilddatei unter
+## res://assets/buildings/<gebaeude_id>.png, wird sie automatisch benutzt.
+## Gibt es kein Bild, zeichnet das Spiel wie bisher den Farb-Quader.
+var _texture: Texture2D = null
+
 
 func setup(p_building_id: String, p_cell: Vector2i) -> void:
 	building_id = p_building_id
 	cell = p_cell
 	var data: Dictionary = GameData.get_building(building_id)
 	size = data["groesse"]
+
+	## Eigenes Sprite vorhanden? Einfach PNG in assets/buildings/ legen,
+	## benannt nach der Gebäude-ID (z.B. "wohnmodul.png") - mehr ist nicht nötig.
+	var texture_path := "res://assets/buildings/%s.png" % building_id
+	if ResourceLoader.exists(texture_path):
+		_texture = load(texture_path)
+	elif FileAccess.file_exists(texture_path):
+		## Fallback: PNG wurde gerade erst hineinkopiert und von Godot noch
+		## nicht importiert -> Bild direkt von der Festplatte laden.
+		var img := Image.load_from_file(ProjectSettings.globalize_path(texture_path))
+		if img != null:
+			_texture = ImageTexture.create_from_image(img)
+
 	## y-Sortierung: Gebäude weiter "unten" im Bild werden später gezeichnet
 	## und verdecken so Gebäude dahinter. z_index = Bildschirm-y reicht dafür.
 	z_index = int(position.y)
@@ -48,6 +66,11 @@ func _cell_offset_to_pixels(offset: Vector2) -> Vector2:
 func _draw() -> void:
 	var data: Dictionary = GameData.get_building(building_id)
 	if data.is_empty():
+		return
+
+	## Gibt es ein eigenes Sprite, wird das gezeichnet - sonst der Quader.
+	if _texture != null:
+		_draw_sprite()
 		return
 
 	var base_color: Color = data["farbe"]
@@ -107,3 +130,31 @@ func _draw() -> void:
 		for i in range(1, steps):
 			var y_offset := Vector2(0, -i * 18.0)
 			draw_line(left + y_offset, bottom + y_offset, glow, 1.0)
+
+
+## Zeichnet das PNG-Sprite passgenau auf die Grundfläche des Gebäudes.
+##
+## Die Konvention für Sprites (siehe docs/SPRITES.md):
+##   - Breite des Bildes = sichtbare Breite der Grundfläche
+##     (1x1-Gebäude: 64 px, 2x2-Gebäude: 128 px - oder ein Vielfaches davon,
+##     das Bild wird automatisch passend skaliert)
+##   - Die UNTERKANTE des Bildes liegt auf der unteren Ecke der Boden-Raute.
+##   - Transparenter Hintergrund (PNG mit Alpha).
+func _draw_sprite() -> void:
+	## Sichtbare Pixel-Breite der Grundfläche in der Iso-Ansicht.
+	var footprint_width := (size.x + size.y) * TILE_HALF_W
+	## Höhe proportional zur Bilddatei skalieren (Seitenverhältnis bleibt).
+	var draw_height := footprint_width * _texture.get_height() / _texture.get_width()
+
+	## Linke Ecke der Raute liegt bei -size.y * 32, die Unterkante bei
+	## (size.x + size.y) * 16 (untere Ecke der Boden-Raute).
+	var left_x := -size.y * TILE_HALF_W
+	var bottom_y := (size.x + size.y) * TILE_HALF_H
+	var rect := Rect2(left_x, bottom_y - draw_height, footprint_width, draw_height)
+
+	## Im Geist-Modus wird das Sprite grün/rot eingefärbt (Vorschau).
+	var tint := Color.WHITE
+	if is_ghost:
+		tint = Color(0.4, 1.0, 0.4, 0.6) if ghost_valid else Color(1.0, 0.3, 0.3, 0.6)
+
+	draw_texture_rect(_texture, rect, false, tint)
