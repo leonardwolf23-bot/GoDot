@@ -138,27 +138,21 @@ func _draw() -> void:
 			draw_line(left + y_offset, bottom + y_offset, glow, 1.0)
 
 
-## Zeichnet eine futuristische Straße: dunkler Asphalt mit leuchtenden
-## Neon-Randstreifen - passend zum Neon-Stil der Gebäude-Sprites.
+## Zeichnet eine schlichte schwarze Straße: dunkler Asphalt mit dezenter
+## grauer Kante, damit man einzelne Zellen noch erkennen kann.
 func _draw_road() -> void:
 	var top := Vector2(0, 0)
 	var right := Vector2(TILE_HALF_W, TILE_HALF_H)
 	var bottom := Vector2(0, TILE_HALF_H * 2)
 	var left := Vector2(-TILE_HALF_W, TILE_HALF_H)
 
-	## Asphalt-Fläche (dunkles Blaugrau).
+	## Asphalt-Fläche (fast schwarz).
 	draw_colored_polygon(PackedVector2Array([top, right, bottom, left]),
-			Color(0.13, 0.15, 0.19))
+			Color(0.07, 0.07, 0.08))
 
-	## Neon-Randstreifen entlang der Rautenkanten (Cyan, leicht leuchtend).
-	var neon := Color(0.2, 0.9, 0.95, 0.9)
-	draw_polyline(PackedVector2Array([top, right, bottom, left, top]), neon, 2.0)
-
-	## Dezente Mittelmarkierung (zwei kurze Striche).
-	var center := Vector2(0, TILE_HALF_H)
-	var marking := Color(0.5, 1.0, 0.8, 0.5)
-	draw_line(center + Vector2(-10, -5), center + Vector2(-2, -1), marking, 1.5)
-	draw_line(center + Vector2(2, 1), center + Vector2(10, 5), marking, 1.5)
+	## Sehr dezente Kante, kaum sichtbar.
+	draw_polyline(PackedVector2Array([top, right, bottom, left, top]),
+			Color(0.22, 0.22, 0.25, 0.5), 1.0)
 
 
 ## Zeichnet das PNG-Sprite passgenau auf die Grundfläche des Gebäudes.

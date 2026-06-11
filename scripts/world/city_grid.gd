@@ -24,6 +24,9 @@ enum Mode { NONE, BUILD, DEMOLISH }
 
 signal mode_changed(mode: int, building_id: String)
 signal cell_hovered(cell: Vector2i)
+## Maus schwebt über einem Gebäude (oder verlässt es: leeres Dictionary).
+## info = {"id": ..., "cell": ...} - das HUD baut daraus den Tooltip.
+signal building_hovered(info: Dictionary)
 
 var current_mode: int = Mode.NONE
 var selected_building_id: String = ""
@@ -40,6 +43,9 @@ var _ghost: BuildingNode = null
 
 ## Merkt sich, ob die linke Maustaste gedrückt ist (für Straßen-Ziehen).
 var _dragging: bool = false
+
+## Über welchem Gebäude die Maus gerade schwebt (für den Hover-Tooltip).
+var _hovered_building: BuildingNode = null
 
 
 func _ready() -> void:
@@ -123,6 +129,7 @@ func _draw() -> void:
 func start_build_mode(building_id: String) -> void:
 	current_mode = Mode.BUILD
 	selected_building_id = building_id
+	_clear_hover()
 	_create_ghost()
 	mode_changed.emit(current_mode, building_id)
 
@@ -131,8 +138,16 @@ func start_build_mode(building_id: String) -> void:
 func start_demolish_mode() -> void:
 	current_mode = Mode.DEMOLISH
 	selected_building_id = ""
+	_clear_hover()
 	_remove_ghost()
 	mode_changed.emit(current_mode, "")
+
+
+## Hover-Tooltip ausblenden (z.B. beim Wechsel in den Baumodus).
+func _clear_hover() -> void:
+	if _hovered_building != null:
+		_hovered_building = null
+		building_hovered.emit({})
 
 
 ## Zurück zum normalen Mauszeiger.
@@ -168,12 +183,29 @@ func _unhandled_input(event: InputEvent) -> void:
 		_update_ghost()
 		var cell := world_to_cell(get_local_mouse_position())
 		cell_hovered.emit(cell)
+		_update_hover(cell)
 		## Straßen lassen sich "malen": Maustaste gedrückt halten und ziehen.
 		if _dragging and current_mode == Mode.BUILD and selected_building_id == "strasse":
 			_try_place_building(cell)
 
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		cancel_mode()
+
+
+## Prüft, ob unter der Maus ein Gebäude liegt, und meldet Änderungen
+## ans HUD (das den Info-Tooltip anzeigt). Nur im normalen Modus -
+## beim Bauen oder Abreißen wäre der Tooltip im Weg.
+func _update_hover(cell: Vector2i) -> void:
+	var found: BuildingNode = null
+	if current_mode == Mode.NONE and occupied.has(cell):
+		found = occupied[cell]
+	if found == _hovered_building:
+		return  ## Nichts geändert -> kein unnötiges Signal.
+	_hovered_building = found
+	if found == null:
+		building_hovered.emit({})
+	else:
+		building_hovered.emit({"id": found.building_id, "cell": found.cell})
 
 
 func _handle_click() -> void:
@@ -193,6 +225,7 @@ func _handle_click() -> void:
 ##   1. Alle Zellen innerhalb der Karte?
 ##   2. Keine Zelle schon belegt? (Überlappungsverbot)
 ##   3. Falls nötig: grenzt mindestens eine Zelle an eine Straße?
+##   4. Straßen selbst: müssen am bestehenden Straßennetz anschließen!
 func is_placement_valid(building_id: String, cell: Vector2i) -> bool:
 	var data := GameData.get_building(building_id)
 	if data.is_empty():
@@ -207,10 +240,30 @@ func is_placement_valid(building_id: String, cell: Vector2i) -> bool:
 			if occupied.has(check):
 				return false
 
+	## Straßen dürfen nicht "irgendwo" stehen: Sie müssen DIREKT (oben,
+	## unten, links oder rechts - nicht diagonal) an eine bestehende
+	## Straße anschließen. So entsteht ein zusammenhängendes Netz,
+	## das am Rathaus beginnt.
+	if building_id == "strasse":
+		return _has_orthogonal_road_neighbor(cell)
+
 	if data["braucht_strasse"] and not _is_adjacent_to_road(cell, size):
 		return false
 
 	return true
+
+
+## Hat die Zelle direkt (nicht diagonal) eine Straße als Nachbar?
+## Ausnahme: Direkt am Rathaus darf immer eine Straße beginnen - so kann
+## das Netz nie komplett "aussterben", selbst wenn alles abgerissen wurde.
+func _has_orthogonal_road_neighbor(cell: Vector2i) -> bool:
+	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var neighbor: Vector2i = cell + offset
+		if roads.has(neighbor):
+			return true
+		if occupied.has(neighbor) and occupied[neighbor].building_id == "rathaus":
+			return true
+	return false
 
 
 ## Grenzt die Grundfläche (cell, size) an mindestens eine Straße?
@@ -339,6 +392,7 @@ func _update_ghost() -> void:
 ## Wird nach dem Laden eines Spielstands aufgerufen.
 func rebuild_from_state() -> void:
 	cancel_mode()
+	_clear_hover()
 	for node in get_children():
 		if node is BuildingNode:
 			node.queue_free()

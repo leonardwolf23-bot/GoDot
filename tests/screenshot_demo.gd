@@ -16,13 +16,14 @@ func _ready() -> void:
 	var center: Vector2i = grid.get_center_cell()
 
 	## Straßennetz: drei Querstraßen, zwei Längsstraßen.
+	## (Als Start-Layout direkt platziert, ohne die Netz-Anschlussregel.)
 	for x in range(-6, 8):
-		_demo_place(grid, "strasse", center + Vector2i(x, 2))
-		_demo_place(grid, "strasse", center + Vector2i(x, 5))
-		_demo_place(grid, "strasse", center + Vector2i(x, -2))
+		_demo_place_road(grid, center + Vector2i(x, 2))
+		_demo_place_road(grid, center + Vector2i(x, 5))
+		_demo_place_road(grid, center + Vector2i(x, -2))
 	for y in range(-2, 6):
-		_demo_place(grid, "strasse", center + Vector2i(-6, y))
-		_demo_place(grid, "strasse", center + Vector2i(7, y))
+		_demo_place_road(grid, center + Vector2i(-6, y))
+		_demo_place_road(grid, center + Vector2i(7, y))
 
 	## Gebäude-Vielfalt entlang der Straßen.
 	var row_a := ["wohnmodul", "oeko_turm", "veganer_markt", "gemeinschaftsgarten",
@@ -31,7 +32,8 @@ func _ready() -> void:
 		_demo_place(grid, row_a[i], center + Vector2i(-5 + i, 3))
 
 	var row_b := ["hydro_farm", "indoor_farm", "protein_labor", "kaese_manufaktur",
-			"fleischersatz_fabrik", "food_court", "kulturzentrum"]
+			"fleischersatz_fabrik", "food_court", "kulturzentrum",
+			"soja_farm", "spirulina_farm"]
 	for i in range(row_b.size()):
 		_demo_place(grid, row_b[i], center + Vector2i(-5 + i, 6))
 
@@ -69,3 +71,11 @@ func _demo_place(grid: CityGrid, id: String, cell: Vector2i) -> void:
 		return
 	GameState.register_starting_building(id, cell)
 	grid._spawn_building_visual(id, cell)
+
+
+## Straßen fürs Demo-Layout: nur Überlappung prüfen, Netzregel überspringen.
+func _demo_place_road(grid: CityGrid, cell: Vector2i) -> void:
+	if grid.occupied.has(cell) or not grid.is_in_bounds(cell):
+		return
+	GameState.register_starting_building("strasse", cell)
+	grid._spawn_building_visual("strasse", cell)

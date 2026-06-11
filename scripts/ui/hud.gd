@@ -35,11 +35,16 @@ var _notification_timer: float = 0.0
 ## Krisen-Warnung (veganer Anteil unter 80 %).
 var _crisis_label: Label
 
+## Schwebender Info-Tooltip für Gebäude unter der Maus.
+var _hover_panel: PanelContainer
+var _hover_label: Label
+
 
 ## Wird von game.gd aufgerufen, BEVOR das HUD benutzt wird.
 func setup(p_grid: CityGrid) -> void:
 	grid = p_grid
 	_build_menu.grid = grid
+	grid.building_hovered.connect(_on_building_hovered)
 
 
 func _ready() -> void:
@@ -52,6 +57,7 @@ func _ready() -> void:
 	_create_side_buttons()
 	_create_notification_label()
 	_create_crisis_label()
+	_create_hover_panel()
 
 	_build_menu = BuildMenu.new()
 	add_child(_build_menu)
@@ -103,6 +109,16 @@ func _create_top_bar() -> void:
 		["datum", "Datum"],
 	]
 	for entry in entries:
+		## Kleines Icon vor dem Wert (falls eine Icon-Datei existiert).
+		var icon := _load_icon(entry[0])
+		if icon != null:
+			var icon_rect := TextureRect.new()
+			icon_rect.texture = icon
+			icon_rect.custom_minimum_size = Vector2(22, 22)
+			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			bar.add_child(icon_rect)
+
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 15)
 		bar.add_child(label)
@@ -229,8 +245,99 @@ func _show_notification(text: String) -> void:
 	_notification_timer = 4.0  ## Meldung 4 Sekunden anzeigen.
 
 
+# ---------------------------------------------------------------------------
+# HOVER-TOOLTIP: Gebäude-Infos unter der Maus
+# ---------------------------------------------------------------------------
+
+func _create_hover_panel() -> void:
+	_hover_panel = PanelContainer.new()
+	_hover_panel.visible = false
+	## Der Tooltip darf selbst keine Maus-Ereignisse abfangen,
+	## sonst "flackert" er, sobald die Maus ihn berührt.
+	_hover_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_hover_panel)
+
+	_hover_label = Label.new()
+	_hover_label.add_theme_font_size_override("font_size", 14)
+	_hover_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover_panel.add_child(_hover_label)
+
+
+## Reagiert auf das Grid-Signal: Maus über Gebäude rein/raus.
+func _on_building_hovered(info: Dictionary) -> void:
+	if info.is_empty():
+		_hover_panel.visible = false
+		return
+	_hover_label.text = _make_building_info_text(info["id"], info["cell"])
+	_hover_panel.visible = true
+	_position_hover_panel()
+
+
+## Baut den Tooltip-Text: Was macht dieses Gebäude PRO TAG?
+func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
+	var data: Dictionary = GameData.get_building(building_id)
+	var lines: Array[String] = [data["name"]]
+
+	## Bezirks-Bonus wirkt auf Produktion und Effekte.
+	var bonus: float = GameState.get_district_bonus_at(cell)
+	var mult := 1.0 + bonus
+
+	var res_names := {
+		"wasser": "Wasser", "essen": "Essen",
+		"satoshis": "Satoshis", "technikpunkte": "Technikpunkte",
+	}
+	for res_name in data["produktion"]:
+		lines.append("+%.1f %s/Tag" % [data["produktion"][res_name] * mult, res_names[res_name]])
+	for res_name in data["verbrauch"]:
+		lines.append("-%.1f %s/Tag" % [data["verbrauch"][res_name], res_names[res_name]])
+	if data["wohnraum"] > 0:
+		lines.append("Wohnraum: %d Bürger" % data["wohnraum"])
+	if data["energie_bedarf"] > 0:
+		lines.append("Strombedarf: %d" % data["energie_bedarf"])
+	if data["energie_leistung"] > 0:
+		lines.append("Stromleistung: +%d" % data["energie_leistung"])
+
+	var effect_names := {
+		"protein": "Protein", "b12": "Vitamin B12", "vitamin_d": "Vitamin D",
+		"mental": "Mentale Gesundheit", "bmi": "BMI", "vegan": "Veganer Einfluss",
+	}
+	for key in data["effekte"]:
+		var value: float = data["effekte"][key] * mult
+		lines.append("%s%.1f %s" % ["+" if value > 0 else "", value, effect_names[key]])
+
+	if bonus > 0.0:
+		lines.append("Bezirks-Bonus: +%d %% (gleiche Nachbarn)" % int(round(bonus * 100)))
+
+	return "\n".join(lines)
+
+
+## Tooltip neben dem Mauszeiger platzieren (und am Bildschirmrand abfangen).
+func _position_hover_panel() -> void:
+	var mouse := get_viewport().get_mouse_position()
+	var pos := mouse + Vector2(18, 18)
+	var screen := get_viewport_rect().size
+	pos.x = minf(pos.x, screen.x - _hover_panel.size.x - 8)
+	pos.y = minf(pos.y, screen.y - _hover_panel.size.y - 8)
+	_hover_panel.position = pos
+
+
+## Lädt ein UI-Icon aus assets/icons/ (oder gibt null zurück).
+func _load_icon(icon_name: String) -> Texture2D:
+	var path := "res://assets/icons/%s.png" % icon_name
+	if ResourceLoader.exists(path):
+		return load(path)
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img != null:
+			return ImageTexture.create_from_image(img)
+	return null
+
+
 func _process(delta: float) -> void:
 	if _notification_timer > 0.0:
 		_notification_timer -= delta
 		if _notification_timer <= 0.0:
 			_notification_label.visible = false
+	## Tooltip folgt dem Mauszeiger.
+	if _hover_panel.visible:
+		_position_hover_panel()

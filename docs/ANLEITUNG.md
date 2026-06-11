@@ -277,6 +277,22 @@ Straßen lassen sich „malen": Maustaste gedrückt halten und ziehen
 (siehe `_unhandled_input`: bei `InputEventMouseMotion` + gedrückter Taste
 wird weitergebaut).
 
+**Netz-Regel:** Straßen können nicht „irgendwo" gebaut werden. Eine neue
+Straße muss **direkt** (oben/unten/links/rechts, nicht diagonal) an eine
+bestehende Straße anschließen – so wächst ein zusammenhängendes Netz vom
+Rathaus aus. Einzige Ausnahme: Direkt am Rathaus darf immer eine Straße
+beginnen, damit das Netz nie komplett aussterben kann
+(`_has_orthogonal_road_neighbor` in `city_grid.gd`).
+
+### Bezirks-Boni (Nachbarschafts-Belohnung)
+
+Gebäude **derselben Kategorie**, die direkt aneinander grenzen, verstärken
+sich gegenseitig: **+10 % Produktion und Effekte pro gleichartigem
+Nachbarn, maximal +30 %**. Ein Wohnviertel, ein Farm-Bezirk oder eine
+Klinik-Meile lohnen sich also. Straßen zählen nicht. Die Logik steckt in
+`GameState.get_district_bonus()`; der Hover-Tooltip im Spiel zeigt den
+aktuellen Bonus jedes Gebäudes an.
+
 ### Die visuelle Platzierungsvorschau ("Geist")
 
 Sobald du im Baumenü ein Gebäude wählst, erzeugt das Grid einen
@@ -436,6 +452,14 @@ Jede Forschung kostet **Technikpunkte** und kann zwei Dinge tun:
 Atomkraft ist erst nach Solarenergie erforschbar. So entstehen kleine
 Technologie-Bäume in vier Kategorien (Landwirtschaft, Gesellschaft,
 Gesundheit, Energie).
+
+**Forschungsdauer:** Forschung braucht Zeit – und es läuft immer nur
+**eine** gleichzeitig. Die Dauer wächst mit den Kosten: Starter-Forschungen
+(bis 30 TP) sind sofort fertig, die großen Endgame-Forschungen dauern bis
+zu 7 Spieltage. Die Technikpunkte werden beim Start bezahlt; das
+Forschungsfenster zeigt einen Countdown („Läuft... noch X Tage").
+Die Staffelung steht in `GameData.get_research_duration()` – einzelne
+Forschungen lassen sich mit einem eigenen Feld `"dauer": X` übersteuern.
 
 **Technik-Detail:** `get_combined_effects()` summiert die Effekte aller
 abgeschlossenen Forschungen und **cached** das Ergebnis (es wird nur neu

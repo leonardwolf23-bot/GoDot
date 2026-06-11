@@ -45,6 +45,8 @@ func _ready() -> void:
 	_refresh()
 	GameState.resources_changed.connect(_refresh)
 	ResearchManager.research_completed.connect(func(_id): _refresh())
+	## Täglich aktualisieren, damit der "noch X Tage"-Countdown stimmt.
+	GameState.day_passed.connect(_refresh)
 
 
 ## Baut die komplette Forschungsliste neu auf.
@@ -96,17 +98,29 @@ func _make_research_row(research_id: String) -> Control:
 	info.add_child(desc)
 
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(170, 0)
+	btn.custom_minimum_size = Vector2(190, 0)
 
 	if ResearchManager.is_completed(research_id):
 		btn.text = "Erforscht ✓"
 		btn.disabled = true
+	elif GameState.active_research == research_id:
+		## Diese Forschung läuft gerade - Countdown anzeigen.
+		btn.text = "Läuft... noch %d Tag(e)" % GameState.research_days_left
+		btn.disabled = true
+		btn.modulate = Color(0.6, 0.9, 1.0)
 	else:
-		btn.text = "%d Technikpunkte" % data["kosten"]
+		## Kosten UND Dauer anzeigen, damit man planen kann.
+		var duration := GameData.get_research_duration(research_id)
+		var duration_text := "sofort" if duration <= 0 else "%d Tag(e)" % duration
+		btn.text = "%d TP / %s" % [data["kosten"], duration_text]
+
 		var requirement: String = data["voraussetzung"]
 		if requirement != "" and not ResearchManager.is_completed(requirement):
 			btn.text = "Benötigt: %s" % GameData.get_research(requirement)["name"]
 			btn.disabled = true
+		elif GameState.active_research != "":
+			btn.disabled = true  ## Es läuft schon eine andere Forschung.
+			btn.tooltip_text = "Es kann nur eine Forschung gleichzeitig laufen."
 		elif not ResearchManager.can_research(research_id):
 			btn.disabled = true  ## Zu wenig Technikpunkte.
 		btn.pressed.connect(func():

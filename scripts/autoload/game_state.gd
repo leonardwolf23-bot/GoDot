@@ -70,6 +70,10 @@ var claimed_regions: Array = ["berlin"]
 ## liegt aber hier, damit Speichern/Laden zentral bleibt).
 var completed_research: Array = []
 
+## Gerade laufende Forschung ("" = keine) und wie viele Tage sie noch braucht.
+var active_research: String = ""
+var research_days_left: int = 0
+
 ## Spielgeschwindigkeit: 0 = Pause, 1 = normal, 2 = schnell, 3 = sehr schnell.
 var game_speed: float = 1.0
 
@@ -82,6 +86,11 @@ var is_game_over: bool = false
 
 var _day_timer: float = 0.0            ## Zählt Sekunden bis zum nächsten Tag.
 var _victory_stable_days: int = 0      ## Wie lange die Siegbedingungen schon halten.
+
+## Belegungs-Index für die Bezirks-Boni: Zelle -> Index in buildings.
+## Wird nur neu aufgebaut, wenn sich die Gebäudeliste ändert (Cache).
+var _occupancy: Dictionary = {}
+var _occupancy_dirty: bool = true
 
 ## Tages-Bilanz für die UI (was wurde zuletzt produziert/verbraucht?).
 var daily_report := {
@@ -118,10 +127,13 @@ func new_game(chosen_character_id: String) -> void:
 	buildings = []
 	claimed_regions = ["berlin"]
 	completed_research = []
+	active_research = ""
+	research_days_left = 0
 	game_speed = 1.0
 	is_game_over = false
 	_day_timer = 0.0
 	_victory_stable_days = 0
+	_occupancy_dirty = true
 
 	## Charakter-Bonus auf das Startkapital anwenden.
 	var mods := _get_character_mods()
@@ -217,8 +229,11 @@ func _simulate_economy() -> void:
 
 	for b in buildings:
 		var data: Dictionary = GameData.get_building(b["id"])
+		## Bezirks-Bonus: gleiche Kategorie nebeneinander = mehr Leistung.
+		var district_mult: float = 1.0 + get_district_bonus(b)
 		for res_name in data["produktion"]:
-			var amount: float = data["produktion"][res_name] * efficiency * production_mult
+			var amount: float = data["produktion"][res_name] * efficiency \
+					* production_mult * district_mult
 			if res_name == "technikpunkte":
 				amount *= mods.get("technik_mult", 1.0)
 			produced[res_name] += amount
@@ -425,6 +440,7 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		"cell": cell,
 		"size": data["groesse"],
 	})
+	_occupancy_dirty = true
 	resources_changed.emit()
 	building_registered.emit(building_id)
 	return true
@@ -438,6 +454,7 @@ func register_starting_building(building_id: String, cell: Vector2i) -> void:
 		"cell": cell,
 		"size": data["groesse"],
 	})
+	_occupancy_dirty = true
 
 
 ## Entfernt ein Gebäude (Abriss) und erstattet einen Teil der Kosten.
@@ -448,6 +465,7 @@ func unregister_building(cell: Vector2i) -> void:
 			if data["baubar"]:  ## Das Rathaus gibt es nicht zurück.
 				resources["satoshis"] += data["kosten"] * GameData.DEMOLISH_REFUND
 			buildings.remove_at(i)
+			_occupancy_dirty = true
 			resources_changed.emit()
 			return
 
@@ -461,7 +479,8 @@ func get_housing_capacity() -> int:
 
 
 ## Summiert die Gesundheits-Effekte aller Gebäude
-## (Gesundheitsgebäude werden je nach Charakter verstärkt).
+## (Gesundheitsgebäude werden je nach Charakter verstärkt,
+## Bezirks-Boni verstärken die Effekte zusätzlich).
 func _sum_building_effects() -> Dictionary:
 	var mods := _get_character_mods()
 	var health_mult: float = mods.get("gesundheits_gebaeude_mult", 1.0)
@@ -469,9 +488,74 @@ func _sum_building_effects() -> Dictionary:
 	for b in buildings:
 		var data: Dictionary = GameData.get_building(b["id"])
 		var mult: float = health_mult if data["kategorie"] == "gesundheit" else 1.0
+		mult *= 1.0 + get_district_bonus(b)
 		for key in data["effekte"]:
 			fx[key] += data["effekte"][key] * mult
 	return fx
+
+
+# ---------------------------------------------------------------------------
+# BEZIRKS-BONI ("Bezirke belohnen")
+# ---------------------------------------------------------------------------
+## Gebäude derselben Kategorie, die DIREKT aneinander grenzen (oben, unten,
+## links, rechts - nicht diagonal), verstärken sich gegenseitig:
+##   +10 % Produktion und Effekte pro gleichartigem Nachbarn, maximal +30 %.
+## Wer also ein Wohnviertel, einen Farm-Bezirk oder eine Klinik-Meile baut,
+## wird dafür belohnt. Straßen zählen nicht.
+
+## Baut den Belegungs-Index neu auf (Zelle -> Gebäude-Index).
+func _rebuild_occupancy() -> void:
+	_occupancy.clear()
+	for i in range(buildings.size()):
+		var b: Dictionary = buildings[i]
+		for x in range(b["size"].x):
+			for y in range(b["size"].y):
+				_occupancy[b["cell"] + Vector2i(x, y)] = i
+	_occupancy_dirty = false
+
+
+## Liefert den Bezirks-Bonus eines Gebäudes als Faktor (0.0 bis 0.3).
+func get_district_bonus(building: Dictionary) -> float:
+	var data := GameData.get_building(building["id"])
+	if data.is_empty() or data["kategorie"] == "strasse":
+		return 0.0
+	if _occupancy_dirty:
+		_rebuild_occupancy()
+
+	var cell: Vector2i = building["cell"]
+	var size: Vector2i = building["size"]
+
+	## Alle Zellen sammeln, die SEITLICH an die Grundfläche grenzen.
+	var neighbor_cells: Array = []
+	for x in range(size.x):
+		neighbor_cells.append(cell + Vector2i(x, -1))
+		neighbor_cells.append(cell + Vector2i(x, size.y))
+	for y in range(size.y):
+		neighbor_cells.append(cell + Vector2i(-1, y))
+		neighbor_cells.append(cell + Vector2i(size.x, y))
+
+	## Verschiedene Nachbar-Gebäude derselben Kategorie zählen.
+	var counted: Dictionary = {}
+	for nc in neighbor_cells:
+		if not _occupancy.has(nc):
+			continue
+		var idx: int = _occupancy[nc]
+		if counted.has(idx) or buildings[idx] == building:
+			continue
+		var neighbor_data := GameData.get_building(buildings[idx]["id"])
+		if neighbor_data["kategorie"] == data["kategorie"]:
+			counted[idx] = true
+
+	return minf(0.3, counted.size() * 0.1)
+
+
+## Bonus-Abfrage für die UI (Hover-Tooltip): per Zelle statt per Gebäude.
+func get_district_bonus_at(cell: Vector2i) -> float:
+	if _occupancy_dirty:
+		_rebuild_occupancy()
+	if not _occupancy.has(cell):
+		return 0.0
+	return get_district_bonus(buildings[_occupancy[cell]])
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +639,8 @@ func to_save_dict() -> Dictionary:
 		"buildings": building_list,
 		"claimed_regions": claimed_regions.duplicate(),
 		"completed_research": completed_research.duplicate(),
+		"active_research": active_research,
+		"research_days_left": research_days_left,
 	}
 
 
@@ -574,6 +660,10 @@ func from_save_dict(data: Dictionary) -> void:
 	character_id = data["character_id"]
 	claimed_regions = data["claimed_regions"].duplicate()
 	completed_research = data["completed_research"].duplicate()
+	## .get() mit Standardwert: So lassen sich auch ÄLTERE Spielstände laden,
+	## die diese Felder noch nicht hatten.
+	active_research = data.get("active_research", "")
+	research_days_left = int(data.get("research_days_left", 0))
 	buildings = []
 	for b in data["buildings"]:
 		var building_data := GameData.get_building(b["id"])
@@ -586,6 +676,7 @@ func from_save_dict(data: Dictionary) -> void:
 	game_speed = 1.0
 	_day_timer = 0.0
 	_victory_stable_days = 0
+	_occupancy_dirty = true
 	resources_changed.emit()
 	population_changed.emit()
 	health_changed.emit()

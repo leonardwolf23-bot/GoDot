@@ -18,6 +18,9 @@ func _ready() -> void:
 	_test_new_game()
 	_test_building_and_economy()
 	_test_research()
+	_test_research_duration()
+	_test_new_buildings()
+	_test_district_bonus()
 	_test_health_and_vegan()
 	_test_population_growth()
 	_test_regions()
@@ -115,12 +118,93 @@ func _test_research() -> void:
 	check(ResearchManager.can_research("atomkraft"),
 			"Atomkraft nach Solarenergie verfügbar")
 
-	## Effekte: Straßenrabatt testen.
+	## Effekte: Straßenrabatt testen (transportwege dauert jetzt 3 Tage!).
 	check(GameState.get_building_cost("strasse") == 10, "Straße kostet normal 10")
 	GameState.resources["technikpunkte"] = 500.0
 	ResearchManager.do_research("transportwege")
+	check(GameState.active_research == "transportwege",
+			"Transportwege läuft als aktive Forschung")
+	check(GameState.get_building_cost("strasse") == 10,
+			"Rabatt gilt erst NACH Abschluss der Forschung")
+	for i in range(3):
+		GameState._advance_one_day()
+	check(ResearchManager.is_completed("transportwege"),
+			"Transportwege nach 3 Tagen abgeschlossen")
 	check(GameState.get_building_cost("strasse") == 5,
 			"Straße kostet nach 'Transportwege' nur noch 5")
+
+
+func _test_research_duration() -> void:
+	print("[Test] Forschungsdauer")
+	GameState.new_game("vegan_gains")
+	GameState.resources["technikpunkte"] = 1000.0
+
+	## Billige Forschung (20 TP) ist sofort fertig.
+	check(GameData.get_research_duration("solarenergie") == 0,
+			"Solarenergie hat Dauer 0 (sofort)")
+	ResearchManager.do_research("solarenergie")
+	check(ResearchManager.is_completed("solarenergie"),
+			"Billige Forschung sofort abgeschlossen")
+	check(GameState.active_research == "", "Keine laufende Forschung danach")
+
+	## Teure Forschung (220 TP) dauert die maximalen 7 Tage.
+	check(GameData.get_research_duration("endlager") == 7,
+			"Endlager hat die Maximaldauer von 7 Tagen")
+
+	## Nur EINE Forschung gleichzeitig.
+	ResearchManager.do_research("atomkraft")  ## 180 TP -> 6 Tage
+	check(GameState.active_research == "atomkraft", "Atomkraft läuft")
+	check(not ResearchManager.can_research("wassergewinnung"),
+			"Zweite Forschung gleichzeitig nicht möglich")
+	for i in range(6):
+		GameState._advance_one_day()
+	check(ResearchManager.is_completed("atomkraft"),
+			"Atomkraft nach 6 Tagen fertig")
+	check(ResearchManager.can_research("wassergewinnung"),
+			"Nach Abschluss ist das Labor wieder frei")
+
+
+func _test_new_buildings() -> void:
+	print("[Test] Neue Gebäude (Soja-Bauernhof, Spirulina-Farm)")
+	GameState.new_game("vegan_gains")
+	check(not GameData.get_building("soja_farm").is_empty(),
+			"Soja-Bauernhof existiert in den Spieldaten")
+	check(not GameData.get_building("spirulina_farm").is_empty(),
+			"Spirulina-Indoor-Farm existiert in den Spieldaten")
+	check(GameState.can_build("soja_farm"),
+			"Soja-Bauernhof ist von Anfang an baubar")
+	check(not GameState.can_build("spirulina_farm"),
+			"Spirulina-Farm braucht erst Indoor-Farming-Forschung")
+	GameState.completed_research = ["hydro_farming", "indoor_farming"]
+	check(GameState.can_build("spirulina_farm"),
+			"Spirulina-Farm nach Forschung baubar")
+
+
+func _test_district_bonus() -> void:
+	print("[Test] Bezirks-Boni")
+	GameState.new_game("vegan_gains")
+	## Zwei Wohnmodule direkt nebeneinander -> +10 % für beide.
+	GameState.register_starting_building("wohnmodul", Vector2i(5, 5))
+	GameState.register_starting_building("wohnmodul", Vector2i(6, 5))
+	check(is_equal_approx(GameState.get_district_bonus_at(Vector2i(5, 5)), 0.1),
+			"Wohnmodul mit 1 gleichem Nachbarn: +10 %")
+
+	## Drittes und viertes Modul rund um (6,5) -> dort +30 % (Maximum).
+	GameState.register_starting_building("wohnmodul", Vector2i(7, 5))
+	GameState.register_starting_building("wohnmodul", Vector2i(6, 6))
+	check(is_equal_approx(GameState.get_district_bonus_at(Vector2i(6, 5)), 0.3),
+			"Wohnmodul mit 3 gleichen Nachbarn: +30 % (Maximum)")
+
+	## Andere Kategorie daneben bringt NICHTS.
+	GameState.register_starting_building("park", Vector2i(5, 4))
+	check(is_equal_approx(GameState.get_district_bonus_at(Vector2i(5, 5)), 0.1),
+			"Andere Kategorie (Park) zählt nicht als Bezirks-Nachbar")
+
+	## Straßen geben nie einen Bonus.
+	GameState.register_starting_building("strasse", Vector2i(10, 10))
+	GameState.register_starting_building("strasse", Vector2i(11, 10))
+	check(GameState.get_district_bonus_at(Vector2i(10, 10)) == 0.0,
+			"Straßen bekommen keinen Bezirks-Bonus")
 
 
 func _test_health_and_vegan() -> void:
@@ -193,6 +277,8 @@ func _test_save_load() -> void:
 	GameState.resources["satoshis"] = 4242.0
 	GameState.resources["technikpunkte"] = 500.0
 	ResearchManager.do_research("solarenergie")
+	## Eine laufende (mehrtägige) Forschung muss mitgespeichert werden.
+	ResearchManager.do_research("stromnetze")  ## 100 TP -> 4 Tage
 	GameState.population = 77
 	GameState.vegan_share = 88.5
 
@@ -208,6 +294,10 @@ func _test_save_load() -> void:
 	check(is_equal_approx(GameState.vegan_share, 88.5), "Veganer Anteil wiederhergestellt")
 	check(GameState.character_id == "militante_veganerin", "Charakter wiederhergestellt")
 	check(GameState.completed_research.has("solarenergie"), "Forschung wiederhergestellt")
+	check(GameState.active_research == "stromnetze",
+			"Laufende Forschung wiederhergestellt")
+	check(GameState.research_days_left == 4,
+			"Verbleibende Forschungstage wiederhergestellt")
 	check(GameState.buildings.size() == 2, "Beide Gebäude wiederhergestellt")
 	check(GameState.buildings[1]["cell"] == Vector2i(2, 3),
 			"Gebäude-Position als Vector2i wiederhergestellt")
@@ -228,9 +318,15 @@ func _test_grid_rules() -> void:
 	## Außerhalb der Karte: verboten.
 	check(not grid.is_placement_valid("strasse", Vector2i(-5, -5)),
 			"Kein Bau außerhalb der Karte")
-	## Straße braucht selbst keine Straße.
-	check(grid.is_placement_valid("strasse", center + Vector2i(5, 5)),
-			"Straße darf frei platziert werden")
+	## Straßen müssen am Netz hängen: mitten im Nichts ist verboten.
+	check(not grid.is_placement_valid("strasse", center + Vector2i(8, 8)),
+			"Straße ohne Anschluss ans Netz verboten")
+	## Direkt neben der Start-Straße (Reihe bei center + (-1..2, 2)): erlaubt.
+	check(grid.is_placement_valid("strasse", center + Vector2i(3, 2)),
+			"Straße mit Anschluss ans Netz erlaubt")
+	## Direkt am Rathaus darf eine Straße immer beginnen.
+	check(grid.is_placement_valid("strasse", center + Vector2i(-1, 0)),
+			"Straße direkt am Rathaus erlaubt")
 	## Wohnmodul neben der Start-Straße: erlaubt.
 	check(grid.is_placement_valid("wohnmodul", center + Vector2i(0, 3)),
 			"Wohnmodul direkt an der Start-Straße erlaubt")

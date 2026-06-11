@@ -220,6 +220,42 @@ const BUILDINGS := {
 		"braucht_strasse": true,
 		"baubar": true,
 	},
+	"soja_farm": {
+		"name": "Soja-Bauernhof",
+		"beschreibung": "Klassischer Bauernhof mit Soja-Feldern (+12 Essen/Tag, gutes Protein).",
+		"kategorie": "essen",
+		"kosten": 250,
+		"groesse": Vector2i(1, 1),
+		"farbe": Color(0.6, 0.75, 0.3),
+		"hoehe": 20,
+		"wohnraum": 0,
+		"produktion": {"essen": 12.0},
+		"verbrauch": {"wasser": 3.0},
+		"energie_bedarf": 1,
+		"energie_leistung": 0,
+		"effekte": {"protein": 1.5},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"baubar": true,
+	},
+	"spirulina_farm": {
+		"name": "Spirulina-Indoor-Farm",
+		"beschreibung": "Leuchtende Algen-Becken: Superfood mit Protein und natürlichem B12-Schub.",
+		"kategorie": "essen",
+		"kosten": 800,
+		"groesse": Vector2i(1, 1),
+		"farbe": Color(0.15, 0.7, 0.6),
+		"hoehe": 36,
+		"wohnraum": 0,
+		"produktion": {"essen": 18.0},
+		"verbrauch": {"wasser": 5.0},
+		"energie_bedarf": 6,
+		"energie_leistung": 0,
+		"effekte": {"protein": 3.0, "b12": 2.0},
+		"forschung_noetig": "indoor_farming",
+		"braucht_strasse": true,
+		"baubar": true,
+	},
 	"hydro_farm": {
 		"name": "Hydro-Farm",
 		"beschreibung": "Wassersparende Hydrokultur (+20 Essen/Tag).",
@@ -963,6 +999,35 @@ func get_building(building_id: String) -> Dictionary:
 ## Liefert die Daten einer Forschung (oder ein leeres Dictionary).
 func get_research(research_id: String) -> Dictionary:
 	return RESEARCH.get(research_id, {})
+
+
+## Wie viele TAGE eine Forschung dauert (0 = sofort fertig).
+## Die Dauer wächst mit den Kosten: Frühe, billige Forschungen sind sofort
+## fertig, die großen Endgame-Forschungen dauern bis zu 7 Tage.
+## Will man eine Forschung gezielt anders takten, kann man ihr in RESEARCH
+## einfach ein eigenes Feld "dauer": X geben - das gewinnt immer.
+func get_research_duration(research_id: String) -> int:
+	var data := get_research(research_id)
+	if data.is_empty():
+		return 0
+	if data.has("dauer"):
+		return int(data["dauer"])
+	var cost: int = data["kosten"]
+	if cost <= 30:
+		return 0    ## Starter-Forschung: sofort.
+	elif cost <= 50:
+		return 1
+	elif cost <= 70:
+		return 2
+	elif cost <= 90:
+		return 3
+	elif cost <= 120:
+		return 4
+	elif cost <= 150:
+		return 5
+	elif cost <= 180:
+		return 6
+	return 7        ## Maximale Dauer.
 
 
 ## Liefert die Daten eines Charakters (oder ein leeres Dictionary).
