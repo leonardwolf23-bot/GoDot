@@ -11,6 +11,12 @@ extends PanelContainer
 
 var grid: CityGrid = null   ## Wird vom HUD gesetzt.
 
+## Meldet dem HUD, dass die Maus über einem Gebäude-Button schwebt
+## (text = Infotext) bzw. ihn wieder verlassen hat (text = "").
+## Das HUD zeigt daraufhin seinen dunklen Info-Kasten an - der bleibt
+## sichtbar, solange die Maus auf dem Button liegt.
+signal info_hovered(text: String)
+
 var _category_bar: HBoxContainer
 var _building_bar: HBoxContainer
 var _active_category: String = "strasse"
@@ -77,7 +83,8 @@ func _on_category_pressed(category_id: String) -> void:
 func _refresh_building_buttons() -> void:
 	if GameState.resources.is_empty():
 		return  ## Spiel wurde noch nicht initialisiert.
-	## Alte Buttons entfernen.
+	## Alte Buttons entfernen (und einen evtl. offenen Info-Kasten schließen).
+	info_hovered.emit("")
 	for child in _building_bar.get_children():
 		child.queue_free()
 
@@ -87,7 +94,12 @@ func _refresh_building_buttons() -> void:
 		var cost: int = GameState.get_building_cost(building_id)
 		btn.text = "%s\n%d ₿" % [data["name"], cost]
 		btn.custom_minimum_size = Vector2(150, 56)
-		btn.tooltip_text = _make_tooltip(building_id)
+		## Eigener Info-Kasten statt Godot-Tooltip: erscheint sofort,
+		## ist dunkel hinterlegt und bleibt, solange die Maus drauf liegt.
+		btn.mouse_entered.connect(func():
+			info_hovered.emit(_make_tooltip(building_id)))
+		btn.mouse_exited.connect(func():
+			info_hovered.emit(""))
 
 		## Gesperrt durch fehlende Forschung?
 		var research_id: String = data["forschung_noetig"]

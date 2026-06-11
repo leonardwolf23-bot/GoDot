@@ -47,10 +47,35 @@ var _dragging: bool = false
 ## Über welchem Gebäude die Maus gerade schwebt (für den Hover-Tooltip).
 var _hovered_building: BuildingNode = null
 
+## Rasen-Kacheln (Varianten gegen sichtbare Wiederholung).
+var _grass_tiles: Array[Texture2D] = []
+
+## Wie viele Zellen Rasen ÜBER den Kartenrand hinaus gezeichnet werden,
+## damit die Welt randlos wirkt (dort kann man nicht bauen).
+const GROUND_OVERSCAN := 18
+
 
 func _ready() -> void:
 	## Bei neuen Regionen wird die Karte größer -> Boden neu zeichnen.
 	GameState.region_claimed.connect(func(_id): queue_redraw())
+	## Fertiggestellte Baustellen optisch in echte Gebäude verwandeln.
+	GameState.building_completed.connect(_on_building_completed)
+	## Rasen-Kacheln laden (mit Fallback auf Flächenfarben, falls sie fehlen).
+	for i in range(3):
+		var tex := _load_texture("res://assets/tiles/grass_%d.png" % i)
+		if tex != null:
+			_grass_tiles.append(tex)
+
+
+## Lädt eine Textur - auch wenn Godot sie noch nicht importiert hat.
+func _load_texture(path: String) -> Texture2D:
+	if ResourceLoader.exists(path):
+		return load(path)
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img != null:
+			return ImageTexture.create_from_image(img)
+	return null
 
 
 # ---------------------------------------------------------------------------
@@ -103,22 +128,44 @@ func world_to_cell(world_pos: Vector2) -> Vector2i:
 
 func _draw() -> void:
 	var s := get_map_size()
-	## Dunkler, futuristischer Boden: Auf dunklem Untergrund leuchten die
-	## Neon-Sprites der Gebäude deutlich besser ("Nacht-Stadt"-Look).
-	var grass_a := Color(0.10, 0.16, 0.13)
-	var grass_b := Color(0.09, 0.14, 0.12)
-	var line_color := Color(0.3, 0.9, 0.7, 0.10)
 
-	for x in range(s):
-		for y in range(s):
+	## Der Rasen wird weit ÜBER den Kartenrand hinaus gezeichnet, damit die
+	## Welt kein sichtbares Ende hat. Außerhalb des bebaubaren Bereichs wird
+	## er abgedunkelt - so sieht man trotzdem, wo die Stadtgrenze liegt.
+	for x in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
+		for y in range(-GROUND_OVERSCAN, s + GROUND_OVERSCAN):
+			var in_city := x >= 0 and y >= 0 and x < s and y < s
 			var top := cell_to_world(Vector2i(x, y))
-			var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
-			var bottom := top + Vector2(0, TILE_HALF_H * 2)
-			var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
-			## Schachbrett-Muster für bessere Lesbarkeit.
-			var color := grass_a if (x + y) % 2 == 0 else grass_b
-			draw_colored_polygon(PackedVector2Array([top, right, bottom, left]), color)
-			draw_polyline(PackedVector2Array([top, right, bottom, left, top]), line_color, 1.0)
+
+			if _grass_tiles.is_empty():
+				## Fallback ohne Texturen: flache Farben.
+				var color := Color(0.16, 0.30, 0.16) if in_city else Color(0.09, 0.17, 0.10)
+				var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
+				var bottom := top + Vector2(0, TILE_HALF_H * 2)
+				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
+				draw_colored_polygon(PackedVector2Array([top, right, bottom, left]), color)
+				continue
+
+			## Variante deterministisch aus der Zellposition wählen
+			## (sieht zufällig aus, bleibt aber bei jedem Neuzeichnen gleich).
+			var variant: int = posmod(x * 7 + y * 13 + x * y, _grass_tiles.size())
+			var tint := Color.WHITE if in_city else Color(0.45, 0.5, 0.47)
+			draw_texture_rect(_grass_tiles[variant],
+					Rect2(top.x - TILE_HALF_W, top.y, TILE_HALF_W * 2, TILE_HALF_H * 2),
+					false, tint)
+
+	## Das Bau-Raster wird NUR im Bau-/Abrissmodus eingeblendet -
+	## im normalen Spiel bleibt der Rasen schön sauber.
+	if current_mode != Mode.NONE:
+		var line_color := Color(1.0, 1.0, 1.0, 0.13)
+		for x in range(s):
+			for y in range(s):
+				var top := cell_to_world(Vector2i(x, y))
+				var right := top + Vector2(TILE_HALF_W, TILE_HALF_H)
+				var bottom := top + Vector2(0, TILE_HALF_H * 2)
+				var left := top + Vector2(-TILE_HALF_W, TILE_HALF_H)
+				draw_polyline(PackedVector2Array([top, right, bottom, left, top]),
+						line_color, 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +178,7 @@ func start_build_mode(building_id: String) -> void:
 	selected_building_id = building_id
 	_clear_hover()
 	_create_ghost()
+	queue_redraw()  ## Bau-Raster einblenden.
 	mode_changed.emit(current_mode, building_id)
 
 
@@ -140,6 +188,7 @@ func start_demolish_mode() -> void:
 	selected_building_id = ""
 	_clear_hover()
 	_remove_ghost()
+	queue_redraw()  ## Bau-Raster einblenden.
 	mode_changed.emit(current_mode, "")
 
 
@@ -156,6 +205,7 @@ func cancel_mode() -> void:
 	selected_building_id = ""
 	_dragging = false
 	_remove_ghost()
+	queue_redraw()  ## Bau-Raster wieder ausblenden.
 	mode_changed.emit(current_mode, "")
 
 
@@ -292,25 +342,48 @@ func _try_place_building(cell: Vector2i) -> void:
 	if not GameState.register_building(selected_building_id, cell):
 		GameState.notification.emit("Nicht genug Satoshis!")
 		return
-	_spawn_building_visual(selected_building_id, cell)
+	## Neue Gebäude starten als Baustelle (Straßen sind sofort fertig).
+	var under_construction := selected_building_id != "strasse"
+	_spawn_building_visual(selected_building_id, cell, under_construction)
 	_update_ghost()
 
 
 ## Erzeugt den sichtbaren Gebäude-Node und trägt die Belegung ein.
-func _spawn_building_visual(building_id: String, cell: Vector2i) -> void:
+func _spawn_building_visual(building_id: String, cell: Vector2i,
+		under_construction: bool = false) -> void:
 	var node := BuildingNode.new()
 	add_child(node)
 	node.position = cell_to_world(cell)
+	node.is_under_construction = under_construction
 	node.setup(building_id, cell)
-	node.z_index = 10 + cell.x + cell.y  ## Hinten zuerst, vorne zuletzt zeichnen.
 
 	var size: Vector2i = GameData.get_building(building_id)["groesse"]
+
+	## Zeichenreihenfolge (z_index):
+	##   - Straßen sind flach und liegen IMMER unter den Gebäuden (z = 5).
+	##     Sonst würden später gebaute Straßen hohe Gebäude überlappen!
+	##   - Gebäude sortieren nach ihrer VORDERSTEN Ecke (cell + size),
+	##     damit auch 2x2-Gebäude wie das Rathaus korrekt verdeckt werden.
+	if building_id == "strasse":
+		node.z_index = 5
+	else:
+		node.z_index = 10 + (cell.x + size.x - 1) + (cell.y + size.y - 1)
+
 	for x in range(size.x):
 		for y in range(size.y):
 			var c := cell + Vector2i(x, y)
 			occupied[c] = node
 			if building_id == "strasse":
 				roads[c] = true
+
+
+## Eine Baustelle ist fertig geworden: Sprite auf das echte Gebäude umschalten.
+func _on_building_completed(cell: Vector2i) -> void:
+	if not occupied.has(cell):
+		return
+	var node: BuildingNode = occupied[cell]
+	node.is_under_construction = false
+	node.queue_redraw()
 
 
 ## Platziert das Start-Rathaus in der Kartenmitte (kostenlos)
@@ -399,5 +472,6 @@ func rebuild_from_state() -> void:
 	occupied.clear()
 	roads.clear()
 	for b in GameState.buildings:
-		_spawn_building_visual(b["id"], b["cell"])
+		## Noch nicht fertige Gebäude als Baustelle wiederherstellen.
+		_spawn_building_visual(b["id"], b["cell"], b.get("bau_tage_uebrig", 0) > 0)
 	queue_redraw()

@@ -25,6 +25,7 @@ signal population_changed              ## Bevölkerung hat sich geändert.
 signal health_changed                  ## Gesundheitswerte haben sich geändert.
 signal vegan_share_changed(value: float)
 signal building_registered(building_id: String)
+signal building_completed(cell: Vector2i)   ## Baustelle fertig geworden.
 signal region_claimed(region_id: String)
 signal research_completed_state(research_id: String)
 signal game_over(victory: bool, reason: String)
@@ -189,6 +190,7 @@ func get_date_string() -> String:
 
 func _advance_one_day() -> void:
 	_advance_calendar()
+	_advance_construction()
 	_simulate_economy()
 	_simulate_health()
 	_simulate_vegan_share()
@@ -197,6 +199,24 @@ func _advance_one_day() -> void:
 	day_passed.emit()
 	resources_changed.emit()
 	health_changed.emit()
+
+
+## Schritt 0: Baustellen weiterbauen. Jedes Gebäude braucht 1 Tag Bauzeit
+## (Straßen sind sofort fertig). Während des Baus produziert es nichts,
+## bietet keinen Wohnraum und hat keine Effekte.
+func _advance_construction() -> void:
+	for b in buildings:
+		if b.get("bau_tage_uebrig", 0) > 0:
+			b["bau_tage_uebrig"] -= 1
+			if b["bau_tage_uebrig"] <= 0:
+				building_completed.emit(b["cell"])
+				notification.emit("%s fertiggestellt!"
+						% GameData.get_building(b["id"])["name"])
+
+
+## Ist das Gebäude fertig gebaut (und zählt damit für die Simulation)?
+func _is_built(b: Dictionary) -> bool:
+	return b.get("bau_tage_uebrig", 0) <= 0
 
 
 ## Schritt 1: Produktion, Verbrauch, Steuern, Energie.
@@ -208,6 +228,8 @@ func _simulate_economy() -> void:
 	var energy_supply := 0.0
 	var energy_demand := 0.0
 	for b in buildings:
+		if not _is_built(b):
+			continue  ## Baustellen zählen noch nicht.
 		var data: Dictionary = GameData.get_building(b["id"])
 		energy_supply += data["energie_leistung"]
 		energy_demand += data["energie_bedarf"]
@@ -228,6 +250,8 @@ func _simulate_economy() -> void:
 	var production_mult: float = 1.0 + research_fx.get("produktions_mult", 0.0)
 
 	for b in buildings:
+		if not _is_built(b):
+			continue  ## Baustellen produzieren noch nichts.
 		var data: Dictionary = GameData.get_building(b["id"])
 		## Bezirks-Bonus: gleiche Kategorie nebeneinander = mehr Leistung.
 		var district_mult: float = 1.0 + get_district_bonus(b)
@@ -439,6 +463,8 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		"id": building_id,
 		"cell": cell,
 		"size": data["groesse"],
+		## Bauzeit: 1 Tag für Gebäude, Straßen sind sofort fertig.
+		"bau_tage_uebrig": 0 if building_id == "strasse" else 1,
 	})
 	_occupancy_dirty = true
 	resources_changed.emit()
@@ -453,6 +479,7 @@ func register_starting_building(building_id: String, cell: Vector2i) -> void:
 		"id": building_id,
 		"cell": cell,
 		"size": data["groesse"],
+		"bau_tage_uebrig": 0,  ## Startgebäude stehen sofort.
 	})
 	_occupancy_dirty = true
 
@@ -470,11 +497,12 @@ func unregister_building(cell: Vector2i) -> void:
 			return
 
 
-## Gesamter Wohnraum aller Gebäude.
+## Gesamter Wohnraum aller FERTIGEN Gebäude.
 func get_housing_capacity() -> int:
 	var total := 0
 	for b in buildings:
-		total += GameData.get_building(b["id"])["wohnraum"]
+		if _is_built(b):
+			total += GameData.get_building(b["id"])["wohnraum"]
 	return total
 
 
@@ -486,6 +514,8 @@ func _sum_building_effects() -> Dictionary:
 	var health_mult: float = mods.get("gesundheits_gebaeude_mult", 1.0)
 	var fx := {"protein": 0.0, "b12": 0.0, "vitamin_d": 0.0, "mental": 0.0, "bmi": 0.0, "vegan": 0.0}
 	for b in buildings:
+		if not _is_built(b):
+			continue  ## Baustellen haben noch keine Wirkung.
 		var data: Dictionary = GameData.get_building(b["id"])
 		var mult: float = health_mult if data["kategorie"] == "gesundheit" else 1.0
 		mult *= 1.0 + get_district_bonus(b)
@@ -542,6 +572,8 @@ func get_district_bonus(building: Dictionary) -> float:
 		var idx: int = _occupancy[nc]
 		if counted.has(idx) or buildings[idx] == building:
 			continue
+		if not _is_built(buildings[idx]):
+			continue  ## Baustellen zählen erst, wenn sie fertig sind.
 		var neighbor_data := GameData.get_building(buildings[idx]["id"])
 		if neighbor_data["kategorie"] == data["kategorie"]:
 			counted[idx] = true
@@ -627,6 +659,7 @@ func to_save_dict() -> Dictionary:
 			## deshalb zerlegen wir ihn in x und y.
 			"cell_x": b["cell"].x,
 			"cell_y": b["cell"].y,
+			"bau_tage_uebrig": b.get("bau_tage_uebrig", 0),
 		})
 	return {
 		"resources": resources.duplicate(true),
@@ -671,6 +704,7 @@ func from_save_dict(data: Dictionary) -> void:
 			"id": b["id"],
 			"cell": Vector2i(int(b["cell_x"]), int(b["cell_y"])),
 			"size": building_data["groesse"],
+			"bau_tage_uebrig": int(b.get("bau_tage_uebrig", 0)),
 		})
 	is_game_over = false
 	game_speed = 1.0

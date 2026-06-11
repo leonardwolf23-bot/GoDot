@@ -20,6 +20,7 @@ func _ready() -> void:
 	_test_research()
 	_test_research_duration()
 	_test_new_buildings()
+	_test_construction()
 	_test_district_bonus()
 	_test_health_and_vegan()
 	_test_population_growth()
@@ -78,17 +79,21 @@ func _test_building_and_economy() -> void:
 			"Wohnmodul kann registriert werden")
 	check(GameState.resources["satoshis"] == money_before - 150,
 			"Baukosten wurden abgezogen")
-	check(GameState.get_housing_capacity() == 25 + 8,
-			"Wohnraum = Rathaus (25) + Wohnmodul (8)")
+	## Bauzeit: Direkt nach dem Bau ist es noch eine Baustelle.
+	check(GameState.get_housing_capacity() == 25,
+			"Baustelle zählt noch nicht als Wohnraum")
 
 	## Gesperrtes Gebäude darf nicht baubar sein.
 	check(not GameState.can_build("hydro_farm"),
 			"Hydro-Farm ohne Forschung gesperrt")
 
-	## Ein Tag Wirtschaft: Rathaus produziert, Bürger verbrauchen.
+	## Ein Tag Wirtschaft: Rathaus produziert, Bürger verbrauchen,
+	## und die Baustelle wird fertig.
 	var food_before: float = GameState.resources["essen"]
 	GameState._advance_one_day()
 	check(GameState.day == 2, "Kalender ist einen Tag weiter")
+	check(GameState.get_housing_capacity() == 25 + 8,
+			"Nach 1 Tag Bauzeit: Wohnraum = Rathaus (25) + Wohnmodul (8)")
 	## Rathaus: +8 Essen, 20 Bürger: -1 je (x1.15 wegen Vegan Gains) = -23.
 	check(GameState.resources["essen"] < food_before,
 			"Essen sinkt ohne Farmen (Verbrauch > Produktion)")
@@ -178,6 +183,29 @@ func _test_new_buildings() -> void:
 	GameState.completed_research = ["hydro_farming", "indoor_farming"]
 	check(GameState.can_build("spirulina_farm"),
 			"Spirulina-Farm nach Forschung baubar")
+
+
+func _test_construction() -> void:
+	print("[Test] Bauzeit (1 Tag)")
+	GameState.new_game("vegan_gains")
+	GameState.register_starting_building("rathaus", Vector2i(10, 10))
+
+	## Straßen sind sofort fertig (sonst wäre Straßenziehen nervig).
+	GameState.register_building("strasse", Vector2i(2, 2))
+	check(GameState.buildings[-1]["bau_tage_uebrig"] == 0,
+			"Straßen haben keine Bauzeit")
+
+	## Gebäude brauchen 1 Tag und produzieren solange nichts.
+	GameState.register_building("gemeinschaftsgarten", Vector2i(4, 4))
+	check(GameState.buildings[-1]["bau_tage_uebrig"] == 1,
+			"Gebäude starten mit 1 Tag Bauzeit")
+	var completed_cells: Array = []
+	GameState.building_completed.connect(func(cell): completed_cells.append(cell))
+	GameState._advance_one_day()
+	check(GameState.buildings[-1]["bau_tage_uebrig"] == 0,
+			"Baustelle nach 1 Tag fertig")
+	check(completed_cells.has(Vector2i(4, 4)),
+			"building_completed-Signal wurde gesendet")
 
 
 func _test_district_bonus() -> void:

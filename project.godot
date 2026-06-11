@@ -26,8 +26,10 @@ SaveManager="*res://scripts/autoload/save_manager.gd"
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+window/size/mode=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/stretch/scale=1.25
 
 [input_devices]
 
@@ -37,4 +39,4 @@ pointing/emulate_touch_from_mouse=false
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-environment/defaults/default_clear_color=Color(0.09, 0.12, 0.16, 1)
+environment/defaults/default_clear_color=Color(0.05, 0.09, 0.06, 1)

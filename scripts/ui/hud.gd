@@ -61,6 +61,8 @@ func _ready() -> void:
 
 	_build_menu = BuildMenu.new()
 	add_child(_build_menu)
+	## Baumenü-Hover: denselben dunklen Info-Kasten benutzen wie in der Welt.
+	_build_menu.info_hovered.connect(_on_menu_info_hovered)
 
 	_research_panel = ResearchPanel.new()
 	add_child(_research_panel)
@@ -255,12 +257,33 @@ func _create_hover_panel() -> void:
 	## Der Tooltip darf selbst keine Maus-Ereignisse abfangen,
 	## sonst "flackert" er, sobald die Maus ihn berührt.
 	_hover_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	## Dunkler, gut lesbarer Hintergrund mit dezentem Rahmen.
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.10, 0.95)
+	style.border_color = Color(0.3, 0.8, 0.7, 0.6)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(10)
+	_hover_panel.add_theme_stylebox_override("panel", style)
 	add_child(_hover_panel)
 
 	_hover_label = Label.new()
 	_hover_label.add_theme_font_size_override("font_size", 14)
+	_hover_label.add_theme_color_override("font_color", Color(0.95, 0.97, 0.95))
 	_hover_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hover_panel.add_child(_hover_label)
+
+
+## Info-Kasten für das Baumenü: bleibt sichtbar, solange die Maus auf dem
+## Button liegt (text = "" bedeutet: Maus hat den Button verlassen).
+func _on_menu_info_hovered(text: String) -> void:
+	if text == "":
+		_hover_panel.visible = false
+		return
+	_hover_label.text = text
+	_hover_panel.visible = true
+	_position_hover_panel()
 
 
 ## Reagiert auf das Grid-Signal: Maus über Gebäude rein/raus.
@@ -277,6 +300,12 @@ func _on_building_hovered(info: Dictionary) -> void:
 func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
 	var data: Dictionary = GameData.get_building(building_id)
 	var lines: Array[String] = [data["name"]]
+
+	## Noch im Bau? Dann das zuerst anzeigen.
+	for b in GameState.buildings:
+		if b["cell"] == cell and b.get("bau_tage_uebrig", 0) > 0:
+			lines.append("BAUSTELLE - noch %d Tag(e) bis zur Fertigstellung" % b["bau_tage_uebrig"])
+			break
 
 	## Bezirks-Bonus wirkt auf Produktion und Effekte.
 	var bonus: float = GameState.get_district_bonus_at(cell)
@@ -312,12 +341,16 @@ func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
 
 
 ## Tooltip neben dem Mauszeiger platzieren (und am Bildschirmrand abfangen).
+## Im unteren Bildschirmbereich (z.B. über dem Baumenü) klappt der Kasten
+## automatisch nach OBEN auf, damit er nichts verdeckt.
 func _position_hover_panel() -> void:
 	var mouse := get_viewport().get_mouse_position()
-	var pos := mouse + Vector2(18, 18)
 	var screen := get_viewport_rect().size
-	pos.x = minf(pos.x, screen.x - _hover_panel.size.x - 8)
-	pos.y = minf(pos.y, screen.y - _hover_panel.size.y - 8)
+	var pos := mouse + Vector2(18, 18)
+	if pos.y + _hover_panel.size.y > screen.y - 8.0:
+		pos.y = mouse.y - _hover_panel.size.y - 14.0
+	pos.x = clampf(pos.x, 8.0, screen.x - _hover_panel.size.x - 8.0)
+	pos.y = maxf(pos.y, 8.0)
 	_hover_panel.position = pos
 
 

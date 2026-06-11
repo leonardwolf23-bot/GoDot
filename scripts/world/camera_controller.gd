@@ -10,9 +10,10 @@ extends Camera2D
 
 ## Bewegungsgeschwindigkeit in Pixeln pro Sekunde (bei Zoom 1.0).
 const PAN_SPEED := 600.0
-const ZOOM_MIN := 0.4
-const ZOOM_MAX := 2.5
-const ZOOM_STEP := 0.1
+const ZOOM_MIN := 0.5
+const ZOOM_MAX := 4.0          ## Tief hineinzoomen = alle Sprite-Details sehen.
+const ZOOM_STEP := 0.15
+const ZOOM_START := 1.6        ## Start nah dran, damit die Stadt groß wirkt.
 
 var _middle_mouse_dragging := false
 
@@ -21,6 +22,7 @@ func _ready() -> void:
 	## Sanfteres Gefühl beim Bewegen.
 	position_smoothing_enabled = true
 	position_smoothing_speed = 8.0
+	zoom = Vector2(ZOOM_START, ZOOM_START)
 
 
 func _process(delta: float) -> void:

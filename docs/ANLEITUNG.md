@@ -293,6 +293,17 @@ Klinik-Meile lohnen sich also. Straßen zählen nicht. Die Logik steckt in
 `GameState.get_district_bonus()`; der Hover-Tooltip im Spiel zeigt den
 aktuellen Bonus jedes Gebäudes an.
 
+### Bauzeit (Baustellen)
+
+Jedes Gebäude braucht **1 Tag Bauzeit** (nur Straßen stehen sofort).
+Während des Baus zeigt die Zelle ein Baustellen-Sprite
+(`assets/buildings/baustelle.png`), und das Gebäude produziert nichts,
+bietet keinen Wohnraum und hat keine Effekte. Nach dem nächsten Tages-Tick
+meldet `GameState` das Signal `building_completed`, die Welt tauscht das
+Sprite aus und eine Meldung erscheint. Gespeichert wird der Baufortschritt
+im Feld `bau_tage_uebrig` jedes Gebäudes. Wer längere Bauzeiten für große
+Gebäude will, ändert nur die Zeile in `GameState.register_building()`.
+
 ### Die visuelle Platzierungsvorschau ("Geist")
 
 Sobald du im Baumenü ein Gebäude wählst, erzeugt das Grid einen

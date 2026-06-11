@@ -24,6 +24,10 @@ var size: Vector2i = Vector2i.ONE
 var is_ghost: bool = false
 var ghost_valid: bool = true
 
+## Baustellen-Modus: Das Gebäude wird gerade gebaut (1 Tag Bauzeit) und
+## zeigt solange das Baustellen-Sprite statt des fertigen Gebäudes.
+var is_under_construction: bool = false
+
 ## Optionales Sprite: Liegt eine Bilddatei unter
 ## res://assets/buildings/<gebaeude_id>.png, wird sie automatisch benutzt.
 ## Gibt es kein Bild, zeichnet das Spiel wie bisher den Farb-Quader.
@@ -66,6 +70,16 @@ func _cell_offset_to_pixels(offset: Vector2) -> Vector2:
 func _draw() -> void:
 	var data: Dictionary = GameData.get_building(building_id)
 	if data.is_empty():
+		return
+
+	## Baustelle: Während der Bauzeit das Baustellen-Sprite zeigen.
+	if is_under_construction and not is_ghost:
+		var site := _load_shared_texture("res://assets/buildings/baustelle.png")
+		if site != null:
+			_draw_texture_on_footprint(site, Color.WHITE)
+			return
+		## Fallback ohne Bild: oranger, flacher "Rohbau"-Quader.
+		_draw_box(Color(0.85, 0.6, 0.2), 12.0)
 		return
 
 	## Gibt es ein eigenes Sprite, wird das gezeichnet - sonst der Quader.
@@ -164,20 +178,57 @@ func _draw_road() -> void:
 ##   - Die UNTERKANTE des Bildes liegt auf der unteren Ecke der Boden-Raute.
 ##   - Transparenter Hintergrund (PNG mit Alpha).
 func _draw_sprite() -> void:
+	## Im Geist-Modus wird das Sprite grün/rot eingefärbt (Vorschau).
+	var tint := Color.WHITE
+	if is_ghost:
+		tint = Color(0.4, 1.0, 0.4, 0.6) if ghost_valid else Color(1.0, 0.3, 0.3, 0.6)
+	_draw_texture_on_footprint(_texture, tint)
+
+
+## Zeichnet eine beliebige Textur passgenau auf die Grundfläche
+## (wird vom Gebäude-Sprite UND vom Baustellen-Sprite benutzt).
+func _draw_texture_on_footprint(texture: Texture2D, tint: Color) -> void:
 	## Sichtbare Pixel-Breite der Grundfläche in der Iso-Ansicht.
 	var footprint_width := (size.x + size.y) * TILE_HALF_W
 	## Höhe proportional zur Bilddatei skalieren (Seitenverhältnis bleibt).
-	var draw_height := footprint_width * _texture.get_height() / _texture.get_width()
+	var draw_height := footprint_width * texture.get_height() / texture.get_width()
 
 	## Linke Ecke der Raute liegt bei -size.y * 32, die Unterkante bei
 	## (size.x + size.y) * 16 (untere Ecke der Boden-Raute).
 	var left_x := -size.y * TILE_HALF_W
 	var bottom_y := (size.x + size.y) * TILE_HALF_H
 	var rect := Rect2(left_x, bottom_y - draw_height, footprint_width, draw_height)
+	draw_texture_rect(texture, rect, false, tint)
 
-	## Im Geist-Modus wird das Sprite grün/rot eingefärbt (Vorschau).
-	var tint := Color.WHITE
-	if is_ghost:
-		tint = Color(0.4, 1.0, 0.4, 0.6) if ghost_valid else Color(1.0, 0.3, 0.3, 0.6)
 
-	draw_texture_rect(_texture, rect, false, tint)
+## Gemeinsam genutzte Texturen (z.B. die Baustelle) nur EINMAL laden
+## und für alle Gebäude wiederverwenden.
+static var _shared_textures := {}
+
+func _load_shared_texture(path: String) -> Texture2D:
+	if _shared_textures.has(path):
+		return _shared_textures[path]
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path)
+	elif FileAccess.file_exists(path):
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img != null:
+			tex = ImageTexture.create_from_image(img)
+	_shared_textures[path] = tex
+	return tex
+
+
+## Einfacher Iso-Quader in einer Farbe (Fallback für die Baustelle).
+func _draw_box(color: Color, height: float) -> void:
+	var top := _cell_offset_to_pixels(Vector2(0, 0))
+	var right := _cell_offset_to_pixels(Vector2(size.x, 0))
+	var bottom := _cell_offset_to_pixels(Vector2(size.x, size.y))
+	var left := _cell_offset_to_pixels(Vector2(0, size.y))
+	var up := Vector2(0, -height)
+	draw_colored_polygon(PackedVector2Array([left, bottom, bottom + up, left + up]),
+			color.darkened(0.25))
+	draw_colored_polygon(PackedVector2Array([bottom, right, right + up, bottom + up]),
+			color.darkened(0.45))
+	draw_colored_polygon(PackedVector2Array([top + up, right + up, bottom + up, left + up]),
+			color.lightened(0.15))

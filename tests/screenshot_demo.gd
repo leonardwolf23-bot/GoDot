@@ -50,10 +50,15 @@ func _ready() -> void:
 	_demo_place(grid, "auto_farm", center + Vector2i(1, 0))
 	_demo_place(grid, "atomkraftwerk", center + Vector2i(4, 0))
 
+	## Eine Baustelle zeigen (Gebäude im Bau, 1 Tag Bauzeit).
+	GameState.register_starting_building("oeko_turm", center + Vector2i(3, 6))
+	GameState.buildings[-1]["bau_tage_uebrig"] = 1
+	grid._spawn_building_visual("oeko_turm", center + Vector2i(3, 6), true)
+
 	var cam := Camera2D.new()
 	add_child(cam)
 	cam.position = grid.cell_to_world(center + Vector2i(0, 2))
-	cam.zoom = Vector2(1.2, 1.2)
+	cam.zoom = Vector2(1.4, 1.4)
 	cam.make_current()
 
 	## Ein paar Frames rendern lassen, dann Screenshot speichern.
