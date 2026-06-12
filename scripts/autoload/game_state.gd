@@ -32,6 +32,7 @@ signal game_over(victory: bool, reason: String)
 signal speed_changed(new_speed: float)
 signal notification(text: String)     ## Kurze Meldung für den Spieler.
 signal citizens_changed               ## Bürgerliste / Berufe haben sich geändert.
+signal farm_fields_changed(farm_cell: Vector2i)
 
 # ---------------------------------------------------------------------------
 # SPIELZUSTAND (alles, was gespeichert werden muss)
@@ -281,6 +282,8 @@ func _simulate_economy() -> void:
 		for res_name in data["verbrauch"]:
 			produced[res_name] -= data["verbrauch"][res_name]
 
+	_simulate_farm_field_harvest(produced, efficiency, production_mult)
+
 	# --- Bürger: Steuern zahlen, Wasser und Essen verbrauchen ---------------
 	produced["satoshis"] += population * GameData.TAX_PER_CITIZEN
 	produced["wasser"] -= population * GameData.WATER_PER_CITIZEN
@@ -486,9 +489,7 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		"bau_tage_uebrig": 0 if building_id == "strasse" else 1,
 	}
 	if data.get("ist_farm", false):
-		var crops: Array = data.get("farm_kulturen", [])
-		entry["farm_crops"] = [crops[0]] if not crops.is_empty() else []
-		entry["farm_area"] = Vector2i(4, 4)
+		entry["farm_fields"] = []
 	if building_id != "strasse" and entry["bau_tage_uebrig"] > 0:
 		assign_builder_to_construction(cell)
 	buildings.append(entry)
@@ -835,14 +836,96 @@ func get_building_at_cell(cell: Vector2i) -> Dictionary:
 	return {}
 
 
-func set_farm_crop(cell: Vector2i, crop_id: String) -> void:
+func get_farm_building(farm_origin_cell: Vector2i) -> Dictionary:
 	for b in buildings:
-		if b["cell"] == cell:
-			var allowed: Array = GameData.get_building(b["id"]).get("farm_kulturen", [])
-			if crop_id in allowed:
-				b["farm_crops"] = [crop_id]
-				notification.emit("Anbau: %s" % crop_id)
-			return
+		if b["cell"] == farm_origin_cell:
+			var data: Dictionary = GameData.get_building(b["id"])
+			if data.get("ist_farm", false):
+				return b
+	return {}
+
+
+func get_farm_field_crop_at(cell: Vector2i) -> String:
+	for b in buildings:
+		if not b.has("farm_fields"):
+			continue
+		for f in b["farm_fields"]:
+			if int(f["x"]) == cell.x and int(f["y"]) == cell.y:
+				return str(f.get("crop", ""))
+	return ""
+
+
+func get_farm_field_counts(farm_origin_cell: Vector2i) -> Dictionary:
+	var counts := {}
+	var b := get_farm_building(farm_origin_cell)
+	if b.is_empty() or not b.has("farm_fields"):
+		return counts
+	for f in b["farm_fields"]:
+		var crop: String = str(f.get("crop", ""))
+		if crop == "":
+			continue
+		counts[crop] = int(counts.get(crop, 0)) + 1
+	return counts
+
+
+func toggle_farm_field(farm_origin_cell: Vector2i, field_cell: Vector2i,
+		crop_id: String) -> bool:
+	var b := get_farm_building(farm_origin_cell)
+	if b.is_empty():
+		return false
+	var allowed: Array = GameData.get_building(b["id"]).get("farm_kulturen", [])
+	if crop_id not in allowed:
+		return false
+
+	if not b.has("farm_fields"):
+		b["farm_fields"] = []
+
+	for i in range(b["farm_fields"].size()):
+		var f: Dictionary = b["farm_fields"][i]
+		if int(f["x"]) == field_cell.x and int(f["y"]) == field_cell.y:
+			if str(f.get("crop", "")) == crop_id:
+				b["farm_fields"].remove_at(i)
+				farm_fields_changed.emit(farm_origin_cell)
+				return true
+			b["farm_fields"][i] = {"x": field_cell.x, "y": field_cell.y, "crop": crop_id}
+			farm_fields_changed.emit(farm_origin_cell)
+			return true
+
+	if b["farm_fields"].size() >= GameData.FARM_MAX_FIELDS:
+		notification.emit("Maximal %d Felder pro Hof!" % GameData.FARM_MAX_FIELDS)
+		return false
+
+	b["farm_fields"].append({"x": field_cell.x, "y": field_cell.y, "crop": crop_id})
+	farm_fields_changed.emit(farm_origin_cell)
+	return true
+
+
+func clear_farm_fields(farm_origin_cell: Vector2i) -> void:
+	var b := get_farm_building(farm_origin_cell)
+	if b.is_empty():
+		return
+	b["farm_fields"] = []
+	farm_fields_changed.emit(farm_origin_cell)
+	notification.emit("Alle Felder geleert.")
+
+
+func _simulate_farm_field_harvest(produced: Dictionary, efficiency: float,
+		production_mult: float) -> void:
+	for b in buildings:
+		if not _is_built(b):
+			continue
+		if not b.has("farm_fields"):
+			continue
+		var district_mult: float = 1.0 + get_district_bonus(b)
+		for f in b["farm_fields"]:
+			var crop: String = str(f.get("crop", ""))
+			if crop == "" or not GameData.CROP_DATA.has(crop):
+				continue
+			var amount: float = GameData.get_crop_yield(crop) * efficiency \
+					* production_mult * district_mult
+			if not produced.has(crop):
+				produced[crop] = 0.0
+			produced[crop] += amount
 
 
 func _simulate_citizen_needs() -> void:
@@ -882,11 +965,8 @@ func to_save_dict() -> Dictionary:
 			"cell_y": b["cell"].y,
 			"bau_tage_uebrig": b.get("bau_tage_uebrig", 0),
 		}
-		if b.has("farm_crops"):
-			saved["farm_crops"] = b["farm_crops"]
-		if b.has("farm_area"):
-			saved["farm_area_x"] = b["farm_area"].x
-			saved["farm_area_y"] = b["farm_area"].y
+		if b.has("farm_fields"):
+			saved["farm_fields"] = b["farm_fields"].duplicate(true)
 		building_list.append(saved)
 
 	var citizen_list: Array = []
@@ -949,10 +1029,10 @@ func from_save_dict(data: Dictionary) -> void:
 			"size": building_data["groesse"],
 			"bau_tage_uebrig": int(b.get("bau_tage_uebrig", 0)),
 		}
-		if b.has("farm_crops"):
-			entry["farm_crops"] = b["farm_crops"]
-		if b.has("farm_area_x"):
-			entry["farm_area"] = Vector2i(int(b["farm_area_x"]), int(b["farm_area_y"]))
+		if b.has("farm_fields"):
+			entry["farm_fields"] = b["farm_fields"]
+		elif GameData.get_building(b["id"]).get("ist_farm", false):
+			entry["farm_fields"] = []
 		buildings.append(entry)
 
 	citizens = []

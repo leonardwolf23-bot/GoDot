@@ -78,6 +78,46 @@ const VEGAN_CRISIS_THRESHOLD: float = 80.0
 ## Wie viel man beim Abriss eines Gebäudes zurückbekommt (50 %).
 const DEMOLISH_REFUND: float = 0.5
 
+## Max. Anzahl bemalter Felder pro Farm.
+const FARM_MAX_FIELDS: int = 36
+
+## Wie weit Felder vom Hof entfernt sein dürfen (Rasterzellen).
+const FARM_FIELD_MAX_DISTANCE: int = 6
+
+# ---------------------------------------------------------------------------
+# KULTUREN / ANBAUFELDER
+# ---------------------------------------------------------------------------
+## Jede Kultur: Anzeigename, Farbe auf der Karte, Ertrag pro Feld und Tag.
+const CROP_DATA := {
+	"sojabohnen": {"name": "Sojabohnen", "farbe": Color(0.72, 0.82, 0.28), "ertrag": 1.4},
+	"hafer": {"name": "Hafer", "farbe": Color(0.85, 0.78, 0.35), "ertrag": 1.2},
+	"weizen": {"name": "Weizen", "farbe": Color(0.92, 0.82, 0.42), "ertrag": 1.3},
+	"erbsen": {"name": "Erbsen", "farbe": Color(0.45, 0.78, 0.38), "ertrag": 1.1},
+	"mais": {"name": "Mais", "farbe": Color(0.88, 0.72, 0.18), "ertrag": 1.5},
+	"eisbergsalat": {"name": "Eisbergsalat", "farbe": Color(0.55, 0.92, 0.55), "ertrag": 1.0},
+	"cashewkerne": {"name": "Cashew", "farbe": Color(0.78, 0.55, 0.32), "ertrag": 0.9},
+	"avocados": {"name": "Avocado", "farbe": Color(0.35, 0.62, 0.28), "ertrag": 0.8},
+	"apfel": {"name": "Apfel", "farbe": Color(0.82, 0.28, 0.28), "ertrag": 1.0},
+}
+
+
+static func get_crop_name(crop_id: String) -> String:
+	if CROP_DATA.has(crop_id):
+		return CROP_DATA[crop_id]["name"]
+	return crop_id
+
+
+static func get_crop_color(crop_id: String) -> Color:
+	if CROP_DATA.has(crop_id):
+		return CROP_DATA[crop_id]["farbe"]
+	return Color(0.6, 0.75, 0.35)
+
+
+static func get_crop_yield(crop_id: String) -> float:
+	if CROP_DATA.has(crop_id):
+		return CROP_DATA[crop_id]["ertrag"]
+	return 1.0
+
 # ---------------------------------------------------------------------------
 # GEBÄUDE
 # ---------------------------------------------------------------------------
@@ -259,15 +299,15 @@ const BUILDINGS := {
 		"farbe": Color(0.45, 0.72, 0.28),
 		"hoehe": 20,
 		"wohnraum": 0,
-		"produktion": {"sojabohnen": 6.0, "hafer": 4.0},
-		"verbrauch": {"wasser": 3.0},
+		"produktion": {},
+		"verbrauch": {"wasser": 2.0},
 		"energie_bedarf": 2,
 		"energie_leistung": 0,
 		"effekte": {},
 		"forschung_noetig": "",
 		"braucht_strasse": true,
 		"ist_farm": true,
-		"farm_kulturen": ["sojabohnen", "hafer", "weizen", "erbsen", "mais"],
+		"farm_kulturen": ["sojabohnen", "hafer", "weizen", "erbsen", "mais", "eisbergsalat"],
 		"farm_max_flaeche": Vector2i(6, 6),
 		"baubar": true,
 	},
@@ -280,8 +320,8 @@ const BUILDINGS := {
 		"farbe": Color(0.35, 0.65, 0.22),
 		"hoehe": 24,
 		"wohnraum": 0,
-		"produktion": {"cashewkerne": 3.0},
-		"verbrauch": {"wasser": 4.0},
+		"produktion": {},
+		"verbrauch": {"wasser": 3.0},
 		"energie_bedarf": 2,
 		"energie_leistung": 0,
 		"effekte": {},

@@ -4,7 +4,7 @@ extends Node2D
 
 const TILE_SIZE := 64.0
 
-enum Mode { NONE, BUILD, DEMOLISH }
+enum Mode { NONE, BUILD, DEMOLISH, FARM_PAINT }
 
 signal mode_changed(mode: int, building_id: String)
 signal cell_hovered(cell: Vector2i)
@@ -14,6 +14,8 @@ signal terrain_changed
 
 var current_mode: int = Mode.NONE
 var selected_building_id: String = ""
+var farm_paint_farm_cell: Vector2i = Vector2i(-1, -1)
+var farm_paint_crop: String = ""
 
 var occupied: Dictionary = {}
 var roads: Dictionary = {}
@@ -31,6 +33,7 @@ const GROUND_OVERSCAN := 8
 func _ready() -> void:
 	GameState.region_claimed.connect(func(_id): queue_redraw())
 	GameState.building_completed.connect(_on_building_completed)
+	GameState.farm_fields_changed.connect(func(_c): queue_redraw())
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	_grass_base = _load_texture("res://assets/tiles/grass_base.png")
 
@@ -148,12 +151,32 @@ func _draw() -> void:
 					elif x >= 0 and y >= 0 and x < s and y < s:
 						draw_rect(rect, Color(0.72, 0.78, 0.62))
 
+	_draw_farm_fields()
+
 	if current_mode != Mode.NONE:
 		var line_color := Color(0.0, 0.0, 0.0, 0.12)
 		for x in range(s):
 			for y in range(s):
 				var r := Rect2(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 				draw_rect(r, line_color, false, 1.0)
+
+
+func _draw_farm_fields() -> void:
+	for b in GameState.buildings:
+		if not b.has("farm_fields"):
+			continue
+		for f in b["farm_fields"]:
+			var fc := Vector2i(int(f["x"]), int(f["y"]))
+			var crop: String = str(f.get("crop", ""))
+			if crop == "":
+				continue
+			var rect := Rect2(fc.x * TILE_SIZE, fc.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+			var col: Color = GameData.get_crop_color(crop)
+			draw_rect(rect, col.darkened(0.08))
+			draw_rect(rect, col.lightened(0.12), false, 2.0)
+			var label: String = GameData.get_crop_name(crop).substr(0, 3)
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 20),
+					label, HORIZONTAL_ALIGNMENT_LEFT, 52, 10, Color(0.1, 0.1, 0.1, 0.85))
 
 
 func start_build_mode(building_id: String) -> void:
@@ -183,10 +206,23 @@ func _clear_hover() -> void:
 func cancel_mode() -> void:
 	current_mode = Mode.NONE
 	selected_building_id = ""
+	farm_paint_farm_cell = Vector2i(-1, -1)
+	farm_paint_crop = ""
 	_dragging = false
 	_remove_ghost()
 	queue_redraw()
 	mode_changed.emit(current_mode, "")
+
+
+func start_farm_paint_mode(farm_cell: Vector2i, crop_id: String) -> void:
+	current_mode = Mode.FARM_PAINT
+	farm_paint_farm_cell = farm_cell
+	farm_paint_crop = crop_id
+	selected_building_id = ""
+	_clear_hover()
+	_remove_ghost()
+	queue_redraw()
+	mode_changed.emit(current_mode, crop_id)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -208,6 +244,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_update_hover(cell)
 		if _dragging and current_mode == Mode.BUILD and selected_building_id == "strasse":
 			_try_place_building(cell)
+		if _dragging and current_mode == Mode.FARM_PAINT:
+			_try_paint_farm_field(cell)
 
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		cancel_mode()
@@ -221,7 +259,15 @@ func _update_hover(cell: Vector2i) -> void:
 		return
 	_hovered_building = found
 	if found == null:
-		building_hovered.emit({})
+		var crop: String = GameState.get_farm_field_crop_at(cell)
+		if crop != "":
+			building_hovered.emit({
+				"id": "farm_field",
+				"cell": cell,
+				"crop": crop,
+			})
+		else:
+			building_hovered.emit({})
 	else:
 		building_hovered.emit({"id": found.building_id, "cell": found.cell})
 
@@ -233,6 +279,8 @@ func _handle_click() -> void:
 			_try_place_building(cell)
 		Mode.DEMOLISH:
 			_try_demolish(cell)
+		Mode.FARM_PAINT:
+			_try_paint_farm_field(cell)
 		Mode.NONE:
 			if occupied.has(cell):
 				var node: BuildingNode = occupied[cell]
@@ -517,6 +565,44 @@ func find_road_path_between_buildings(from_cell: Vector2i, from_size: Vector2i,
 				best_len = path.size()
 				best_path = path
 	return best_path
+
+
+func is_valid_farm_field_cell(farm_cell: Vector2i, field_cell: Vector2i) -> bool:
+	if not is_in_bounds(field_cell):
+		return false
+	if occupied.has(field_cell):
+		return false
+	if is_terrain_blocking(field_cell):
+		return false
+	if roads.has(field_cell):
+		return false
+
+	var farm_b := GameState.get_farm_building(farm_cell)
+	if farm_b.is_empty():
+		return false
+	var origin: Vector2i = farm_b["cell"]
+	var size: Vector2i = farm_b["size"]
+
+	var min_dist := 9999
+	for x in range(size.x):
+		for y in range(size.y):
+			var fp: Vector2i = origin + Vector2i(x, y)
+			var d: int = absi(field_cell.x - fp.x) + absi(field_cell.y - fp.y)
+			min_dist = mini(min_dist, d)
+	if min_dist > GameData.FARM_FIELD_MAX_DISTANCE:
+		return false
+	if min_dist == 0:
+		return false
+	return true
+
+
+func _try_paint_farm_field(cell: Vector2i) -> void:
+	if farm_paint_farm_cell == Vector2i(-1, -1) or farm_paint_crop == "":
+		return
+	if not is_valid_farm_field_cell(farm_paint_farm_cell, cell):
+		return
+	GameState.toggle_farm_field(farm_paint_farm_cell, cell, farm_paint_crop)
+	queue_redraw()
 
 
 func get_map_entry_position(edge: String) -> Vector2:

@@ -325,7 +325,12 @@ func _on_building_hovered(info: Dictionary) -> void:
 	if info.is_empty():
 		_hover_panel.visible = false
 		return
-	_hover_label.text = _make_building_info_text(info["id"], info["cell"])
+	if info.get("id") == "farm_field":
+		var crop: String = str(info.get("crop", ""))
+		_hover_label.text = "%s-Anbaufeld\n+%.1f %s/Tag pro Feld" % [
+			GameData.get_crop_name(crop), GameData.get_crop_yield(crop), crop]
+	else:
+		_hover_label.text = _make_building_info_text(info["id"], info["cell"])
 	_hover_panel.visible = true
 	_position_hover_panel()
 
@@ -376,6 +381,15 @@ func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
 
 	if bonus > 0.0:
 		lines.append("Bezirks-Bonus: +%d %% (gleiche Nachbarn)" % int(round(bonus * 100)))
+
+	if data.get("ist_farm", false):
+		var counts: Dictionary = GameState.get_farm_field_counts(cell)
+		if counts.is_empty():
+			lines.append("Anbaufläche: noch keine Felder markiert")
+		else:
+			lines.append("Anbaufläche:")
+			for crop in counts:
+				lines.append("  %s: %d Feld(er)" % [GameData.get_crop_name(str(crop)), int(counts[crop])])
 
 	return "\n".join(lines)
 
