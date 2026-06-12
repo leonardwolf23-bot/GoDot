@@ -23,11 +23,12 @@ var _active_category: String = "strasse"
 
 
 func _ready() -> void:
-	## Layout: das gesamte Menü unten mittig andocken.
-	set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	offset_top = -118.0
+	set_meta("panel_id", "build")
+	_configure_embedded_style()
 
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(vbox)
 
 	_category_bar = HBoxContainer.new()
@@ -35,7 +36,8 @@ func _ready() -> void:
 	vbox.add_child(_category_bar)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 64)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 48)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vbox.add_child(scroll)
@@ -54,10 +56,16 @@ func _ready() -> void:
 	GameState.research_completed_state.connect(func(_id): _refresh_building_buttons())
 
 
+func _configure_embedded_style() -> void:
+	var style := StyleBoxEmpty.new()
+	add_theme_stylebox_override("panel", style)
+
+
 func _build_category_buttons() -> void:
 	for category in GameData.BUILD_CATEGORIES:
 		var btn := Button.new()
 		btn.text = category["name"]
+		btn.add_theme_font_size_override("font_size", 11)
 		btn.toggle_mode = false
 		## .bind() hängt das Argument an den Funktionsaufruf an -
 		## so weiß der Klick-Handler, welche Kategorie gemeint ist.
@@ -93,7 +101,8 @@ func _refresh_building_buttons() -> void:
 		var btn := Button.new()
 		var cost: int = GameState.get_building_cost(building_id)
 		btn.text = "%s\n%d ₿" % [data["name"], cost]
-		btn.custom_minimum_size = Vector2(150, 56)
+		btn.add_theme_font_size_override("font_size", 10)
+		btn.custom_minimum_size = Vector2(108, 44)
 		## Eigener Info-Kasten statt Godot-Tooltip: erscheint sofort,
 		## ist dunkel hinterlegt und bleibt, solange die Maus drauf liegt.
 		btn.mouse_entered.connect(func():

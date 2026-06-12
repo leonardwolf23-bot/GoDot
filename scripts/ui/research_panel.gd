@@ -15,32 +15,28 @@ var _list: VBoxContainer
 
 func _ready() -> void:
 	visible = false
-	## Mittig auf dem Bildschirm, feste Größe.
-	set_anchors_preset(Control.PRESET_CENTER)
-	custom_minimum_size = Vector2(640, 600)
+	set_meta("panel_id", "research")
+	_configure_embedded_style()
 
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(vbox)
 
 	var title := Label.new()
 	title.text = "Forschung"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", 14)
 	vbox.add_child(title)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(620, 500)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vbox.add_child(scroll)
 
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_list)
-
-	var close := Button.new()
-	close.text = "Schließen"
-	close.pressed.connect(func(): visible = false)
-	vbox.add_child(close)
 
 	_refresh()
 	GameState.resources_changed.connect(_refresh)
@@ -53,14 +49,23 @@ func _ready() -> void:
 ## Bei der überschaubaren Anzahl an Forschungen ist das völlig schnell genug.
 func _refresh() -> void:
 	if not visible:
-		return  ## Unsichtbare Panels nicht unnötig aktualisieren.
+		return
 	_rebuild_list()
 
 
-## Beim Öffnen einmal aktualisieren.
+func _configure_embedded_style() -> void:
+	var style := StyleBoxEmpty.new()
+	add_theme_stylebox_override("panel", style)
+
+
+## Beim Öffnen einmal aktualisieren (wird vom unteren HUD aufgerufen).
 func open() -> void:
 	visible = true
 	_rebuild_list()
+
+
+func show_embedded() -> void:
+	open()
 
 
 func _rebuild_list() -> void:
@@ -70,7 +75,7 @@ func _rebuild_list() -> void:
 	for category in GameData.RESEARCH_CATEGORIES:
 		var header := Label.new()
 		header.text = category["name"]
-		header.add_theme_font_size_override("font_size", 18)
+		header.add_theme_font_size_override("font_size", 12)
 		header.add_theme_color_override("font_color", Color(0.6, 0.9, 0.7))
 		_list.add_child(header)
 
@@ -88,17 +93,19 @@ func _make_research_row(research_id: String) -> Control:
 
 	var name_label := Label.new()
 	name_label.text = data["name"]
+	name_label.add_theme_font_size_override("font_size", 11)
 	info.add_child(name_label)
 
 	var desc := Label.new()
 	desc.text = data["beschreibung"]
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.add_theme_font_size_override("font_size", 12)
+	desc.add_theme_font_size_override("font_size", 10)
 	desc.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
 	info.add_child(desc)
 
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(190, 0)
+	btn.add_theme_font_size_override("font_size", 10)
+	btn.custom_minimum_size = Vector2(120, 0)
 
 	if ResearchManager.is_completed(research_id):
 		btn.text = "Erforscht ✓"

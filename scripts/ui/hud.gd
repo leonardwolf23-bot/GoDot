@@ -9,7 +9,7 @@ extends Control
 ##     Datum und Geschwindigkeits-Buttons
 ##   - Rechte Leiste: Buttons für Forschung, Gesundheit, Deutschland,
 ##     Speichern und Hauptmenü
-##   - Unten: das Baumenü (BuildMenu)
+##   - Unten: grafisches HUD (Research / Build / Main Menu)
 ##   - Mitte: Panels (Forschung, Gesundheit, Regionen) und Meldungen
 ##   - Overlay: Sieg/Niederlage-Bildschirm
 ##
@@ -23,8 +23,10 @@ var _labels := {}
 var _speed_buttons: Array[Button] = []
 
 ## Panels.
+var _bottom_hud: BottomHudBar
 var _build_menu: BuildMenu
 var _research_panel: ResearchPanel
+var _speed_panel: PanelContainer
 var _health_panel: HealthPanel
 var _region_panel: RegionPanel
 var _building_inspect_panel: BuildingInspectPanel
@@ -68,13 +70,9 @@ func _ready() -> void:
 	_create_crisis_label()
 	_create_hover_panel()
 
-	_build_menu = BuildMenu.new()
-	add_child(_build_menu)
-	## Baumenü-Hover: denselben dunklen Info-Kasten benutzen wie in der Welt.
-	_build_menu.info_hovered.connect(_on_menu_info_hovered)
-
 	_research_panel = ResearchPanel.new()
-	add_child(_research_panel)
+	_create_bottom_hud()
+
 	_health_panel = HealthPanel.new()
 	add_child(_health_panel)
 	_region_panel = RegionPanel.new()
@@ -144,13 +142,10 @@ func _create_top_bar() -> void:
 ## Sitzen unten rechts neben dem Baumenü - da hat man sie beim Bauen direkt
 ## unter der Maus.
 func _create_speed_controls() -> void:
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	panel.offset_left = -200.0
-	panel.offset_right = -12.0
-	panel.offset_top = -170.0
-	panel.offset_bottom = -126.0
-	add_child(panel)
+	_speed_panel = PanelContainer.new()
+	_speed_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	add_child(_speed_panel)
+	var panel := _speed_panel
 
 	var bar := HBoxContainer.new()
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -232,13 +227,42 @@ func _create_side_buttons() -> void:
 	add_child(vbox)
 
 	_add_side_button(vbox, "Bauarbeiter ausbilden", func(): GameState.train_builder())
-	_add_side_button(vbox, "Forschung", func(): _research_panel.open())
 	_add_side_button(vbox, "Gesundheit", func():
 		_health_panel.visible = not _health_panel.visible)
 	_add_side_button(vbox, "Deutschland", func(): _region_panel.open())
 	_add_side_button(vbox, "Speichern", func(): SaveManager.save_game())
-	_add_side_button(vbox, "Hauptmenü", func():
-		get_tree().change_scene_to_file("res://scenes/main_menu.tscn"))
+
+
+func _create_bottom_hud() -> void:
+	_bottom_hud = BottomHudBar.new()
+	add_child(_bottom_hud)
+
+	_build_menu = BuildMenu.new()
+	_build_menu.info_hovered.connect(_on_menu_info_hovered)
+	_bottom_hud.add_panel("build", _build_menu)
+
+	_bottom_hud.add_panel("research", _research_panel)
+
+	var mechanics := MechanicsPanel.new()
+	_bottom_hud.add_panel("mechanics", mechanics)
+
+	_bottom_hud.panel_changed.connect(_on_bottom_panel_changed)
+	call_deferred("_update_speed_controls_position")
+
+
+func _on_bottom_panel_changed(panel_id: String) -> void:
+	if panel_id == "research":
+		_research_panel.show_embedded()
+
+
+func _update_speed_controls_position() -> void:
+	if _speed_panel == null or _bottom_hud == null:
+		return
+	var bar_h: float = _bottom_hud.get_bar_height()
+	_speed_panel.offset_left = -200.0
+	_speed_panel.offset_right = -12.0
+	_speed_panel.offset_bottom = -bar_h - 8.0
+	_speed_panel.offset_top = _speed_panel.offset_bottom - 44.0
 
 
 func _add_side_button(parent: VBoxContainer, text: String, callback: Callable) -> void:
@@ -421,7 +445,10 @@ func _position_hover_panel() -> void:
 	var mouse := get_viewport().get_mouse_position()
 	var screen := get_viewport_rect().size
 	var pos := mouse + Vector2(18, 18)
-	if pos.y + _hover_panel.size.y > screen.y - 8.0:
+	var bottom_reserve: float = 8.0
+	if _bottom_hud != null:
+		bottom_reserve = _bottom_hud.get_bar_height() + 12.0
+	if pos.y + _hover_panel.size.y > screen.y - bottom_reserve:
 		pos.y = mouse.y - _hover_panel.size.y - 14.0
 	pos.x = clampf(pos.x, 8.0, screen.x - _hover_panel.size.x - 8.0)
 	pos.y = maxf(pos.y, 8.0)
@@ -438,6 +465,11 @@ func _load_icon(icon_name: String) -> Texture2D:
 		if img != null:
 			return ImageTexture.create_from_image(img)
 	return null
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		call_deferred("_update_speed_controls_position")
 
 
 func _process(delta: float) -> void:
