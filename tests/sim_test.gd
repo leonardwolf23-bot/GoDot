@@ -21,6 +21,7 @@ func _ready() -> void:
 	_test_research_duration()
 	_test_new_buildings()
 	_test_construction()
+	_test_warehouse_deliveries()
 	_test_district_bonus()
 	_test_health_and_vegan()
 	_test_population_growth()
@@ -88,13 +89,17 @@ func _test_building_and_economy() -> void:
 	check(not GameState.can_build("hydro_farm"),
 			"Hydro-Farm ohne Forschung gesperrt")
 
-	## Ein Tag Wirtschaft: Rathaus produziert, Bürger verbrauchen,
-	## und die Baustelle wird fertig.
+	## Ein Tag Wirtschaft: Rathaus produziert, Bürger verbrauchen.
 	var food_before: float = GameState.resources["essen"]
 	GameState._advance_one_day()
 	check(GameState.day == 2, "Kalender ist einen Tag weiter")
+	check(GameState.get_housing_capacity() == 25,
+			"Nach 1 Tag: Wohnmodul-Baustelle zählt noch nicht als Wohnraum")
+	for _i in range(2):
+		GameState._advance_one_day()
 	check(GameState.get_housing_capacity() == 25 + 8,
-			"Nach 1 Tag Bauzeit: Wohnraum = Rathaus (25) + Wohnmodul (8)")
+			"Nach %d Tagen Bauzeit: Wohnraum = Rathaus (25) + Wohnmodul (8)"
+			% GameData.CONSTRUCTION_DAYS)
 	## Rathaus: +8 Essen, 20 Bürger: -1 je (x1.15 wegen Vegan Gains) = -23.
 	check(GameState.resources["essen"] < food_before,
 			"Essen sinkt ohne Farmen (Verbrauch > Produktion)")
@@ -187,7 +192,7 @@ func _test_new_buildings() -> void:
 
 
 func _test_construction() -> void:
-	print("[Test] Bauzeit (1 Tag)")
+	print("[Test] Bauzeit (%d Tage)" % GameData.CONSTRUCTION_DAYS)
 	GameState.new_game("vegan_gains")
 	GameState.register_starting_building("rathaus", Vector2i(10, 10))
 
@@ -196,18 +201,73 @@ func _test_construction() -> void:
 	check(GameState.buildings[-1]["bau_tage_uebrig"] == 0,
 			"Straßen haben keine Bauzeit")
 
-	## Gebäude brauchen 1 Tag und produzieren solange nichts.
+	## Gebäude brauchen mehrere Tage und produzieren solange nichts.
 	check(GameState.train_builder(), "Bauarbeiter für Garten-Baustelle")
 	GameState.register_building("gemeinschaftsgarten", Vector2i(4, 4))
-	check(GameState.buildings[-1]["bau_tage_uebrig"] == 1,
-			"Gebäude starten mit 1 Tag Bauzeit")
+	check(GameState.buildings[-1]["bau_tage_uebrig"] == GameData.CONSTRUCTION_DAYS,
+			"Gebäude starten mit %d Tagen Bauzeit" % GameData.CONSTRUCTION_DAYS)
 	var completed_cells: Array = []
 	GameState.building_completed.connect(func(cell): completed_cells.append(cell))
+	for i in range(GameData.CONSTRUCTION_DAYS - 1):
+		GameState._advance_one_day()
+		check(GameState.buildings[-1]["bau_tage_uebrig"] == GameData.CONSTRUCTION_DAYS - i - 1,
+				"Baustelle nach Tag %d noch nicht fertig" % (i + 1))
 	GameState._advance_one_day()
 	check(GameState.buildings[-1]["bau_tage_uebrig"] == 0,
-			"Baustelle nach 1 Tag fertig")
+			"Baustelle nach %d Tagen fertig" % GameData.CONSTRUCTION_DAYS)
 	check(completed_cells.has(Vector2i(4, 4)),
 			"building_completed-Signal wurde gesendet")
+
+
+func _test_warehouse_deliveries() -> void:
+	print("[Test] Lagerhaus und Lieferungen")
+	GameState.new_game("vegan_gains")
+	GameState.register_starting_building("rathaus", Vector2i(10, 10))
+
+	check(not GameData.get_building("lagerhaus").is_empty(),
+			"Lagerhaus existiert in den Spieldaten")
+	check(GameState.can_build("lagerhaus"),
+			"Lagerhaus ist mit Start-Rohstoffen baubar")
+
+	check(GameState.train_builder(), "Bauarbeiter für Lagerhaus")
+	check(GameState.register_building("lagerhaus", Vector2i(6, 6)),
+			"Lagerhaus kann registriert werden")
+	for _i in range(GameData.CONSTRUCTION_DAYS):
+		GameState._advance_one_day()
+	var lagerhaus_ready := false
+	for b in GameState.buildings:
+		if b["id"] == "lagerhaus" and b.get("bau_tage_uebrig", 0) <= 0:
+			lagerhaus_ready = true
+	check(lagerhaus_ready, "Lagerhaus ist fertig gebaut")
+
+	## Farm-Ernte wird als Lieferjob zum Lagerhaus eingeplant.
+	check(GameState.train_builder(), "Bauarbeiter für Bauernhof")
+	GameState.register_building("bauernhof", Vector2i(12, 12))
+	for _i in range(GameData.CONSTRUCTION_DAYS):
+		GameState._advance_one_day()
+	var farm := GameState.get_farm_building(Vector2i(12, 12))
+	check(not farm.is_empty(), "Bauernhof wurde registriert")
+	GameState.assign_farmer_to_building(Vector2i(12, 12))
+	farm["farm_fields"] = [{"x": 13, "y": 14, "crop": "weizen"}]
+	GameState._advance_one_day()
+	var has_weizen_job := false
+	for job in GameState.delivery_queue:
+		if job.get("resource", "") == "weizen":
+			has_weizen_job = true
+	check(has_weizen_job, "Weizen-Ernte erzeugt Lieferauftrag ins Lagerhaus")
+
+	## Direkte Einlagerung ins Lagerhaus.
+	var stored: float = GameState.deposit_to_lager(Vector2i(6, 6), "holz", 25.0)
+	check(stored == 25.0, "Holz kann ins Lagerhaus eingelagert werden")
+	check(GameState.get_total_stored("holz") >= 25.0,
+			"get_total_stored zählt Lager + globale Vorräte")
+	var withdrawn: float = GameState.withdraw_resource("holz", 10.0)
+	check(withdrawn == 10.0, "withdraw_resource entnimmt zuerst aus dem Lager")
+
+	## Welt-Ressourcen (Baum) werden als Abhol-Lieferung eingeplant.
+	GameState.queue_world_pickup(Vector2i(3, 3), "holz", 8.0)
+	check(not GameState.delivery_queue.is_empty(),
+			"Baum-Holz erzeugt Lieferauftrag zum Lagerhaus")
 
 
 func _test_district_bonus() -> void:

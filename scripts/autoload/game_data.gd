@@ -30,6 +30,32 @@ const FARM_BUILDING_IDS: Array[String] = ["bauernhof", "exotischer_hof"]
 const BUILDER_HUNGER_DAYS: int = 30
 const BUILDER_STARVE_DAYS: int = 60
 
+## Bauzeit für Gebäude (Straßen sofort).
+const CONSTRUCTION_DAYS: int = 3
+
+## Lagerkapazität pro Ressourcentyp und Lagerhaus.
+const LAGERHAUS_CAPACITY: int = 150
+
+## Ressourcen, die ins Lagerhaus gebracht werden.
+const STORABLE_RESOURCES: Array[String] = [
+	"holz", "steine", "wasser", "essen",
+	"sojabohnen", "hafer", "weizen", "erbsen", "mais", "eisbergsalat",
+	"cashewkerne", "avocados", "apfel",
+	"brot", "tofu", "sojamilch", "hafermilch", "vaese", "proteinriegel",
+	"seitanwuerste", "hefeflocken",
+]
+
+## Zusätzliche Baumaterial-Kosten (Holz / Steine).
+const BUILD_MATERIALS := {
+	"lagerhaus": {"holz": 30, "steine": 20},
+	"bauernhof": {"holz": 25, "steine": 10},
+	"exotischer_hof": {"holz": 35, "steine": 15},
+	"wasserwerk": {"holz": 20, "steine": 25},
+	"wohnmodul": {"holz": 15, "steine": 8},
+	"vegan_muehle": {"holz": 20, "steine": 15},
+	"tofu_huette": {"holz": 18, "steine": 12},
+}
+
 ## Startwerte eines neuen Spiels.
 const START_RESOURCES := {
 	"wasser": 200.0,
@@ -117,6 +143,29 @@ static func get_crop_yield(crop_id: String) -> float:
 	if CROP_DATA.has(crop_id):
 		return CROP_DATA[crop_id]["ertrag"]
 	return 1.0
+
+
+static func get_resource_label(res_id: String) -> String:
+	var labels := {
+		"wasser": "Wasser", "essen": "Essen", "holz": "Holz", "steine": "Steine",
+		"satoshis": "Satoshis", "technikpunkte": "Technik",
+		"brot": "Brot", "tofu": "Tofu", "sojamilch": "Sojamilch",
+	}
+	if labels.has(res_id):
+		return labels[res_id]
+	if CROP_DATA.has(res_id):
+		return CROP_DATA[res_id]["name"]
+	return res_id.capitalize()
+
+
+static func is_storable(res_id: String) -> bool:
+	return res_id in STORABLE_RESOURCES
+
+
+static func get_build_materials(building_id: String) -> Dictionary:
+	if BUILD_MATERIALS.has(building_id):
+		return BUILD_MATERIALS[building_id]
+	return {}
 
 # ---------------------------------------------------------------------------
 # GEBÄUDE
@@ -284,6 +333,45 @@ const BUILDINGS := {
 		"produktion": {},
 		"verbrauch": {},
 		"energie_bedarf": 1,
+		"energie_leistung": 0,
+		"effekte": {},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"ist_lager": true,
+		"baubar": true,
+	},
+	"vegan_muehle": {
+		"name": "Vegane Mühle",
+		"beschreibung": "Mahlt Weizen und Hafer zu Brot (braucht Vorräte im Lager).",
+		"kategorie": "essen",
+		"kosten": 320,
+		"groesse": Vector2i(1, 1),
+		"farbe": Color(0.82, 0.68, 0.42),
+		"hoehe": 24,
+		"wohnraum": 0,
+		"produktion": {"brot": 4.0},
+		"verarbeitung": {"weizen": 2.0, "hafer": 1.0},
+		"verbrauch": {},
+		"energie_bedarf": 2,
+		"energie_leistung": 0,
+		"effekte": {},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"baubar": true,
+	},
+	"tofu_huette": {
+		"name": "Tofu-Hütte",
+		"beschreibung": "Verarbeitet Sojabohnen zu Tofu.",
+		"kategorie": "essen",
+		"kosten": 280,
+		"groesse": Vector2i(1, 1),
+		"farbe": Color(0.75, 0.82, 0.55),
+		"hoehe": 22,
+		"wohnraum": 0,
+		"produktion": {"tofu": 3.0},
+		"verarbeitung": {"sojabohnen": 3.0},
+		"verbrauch": {"wasser": 1.0},
+		"energie_bedarf": 2,
 		"energie_leistung": 0,
 		"effekte": {},
 		"forschung_noetig": "",

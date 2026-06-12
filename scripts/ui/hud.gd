@@ -175,8 +175,11 @@ func _refresh_top_bar() -> void:
 	var report := GameState.daily_report
 	_labels["wasser"].text = "Wasser: %d (%+.0f)" % [r["wasser"], report["wasser"]]
 	_labels["essen"].text = "Essen: %d (%+.0f)" % [r["essen"], report["essen"]]
-	_labels["holz"].text = "Holz: %d (%+.0f)" % [r.get("holz", 0), report.get("holz", 0)]
-	_labels["steine"].text = "Stein: %d (%+.0f)" % [r.get("steine", 0), report.get("steine", 0)]
+	var wh: Dictionary = GameState.get_warehouse_totals()
+	var holz_total: float = r.get("holz", 0) + wh.get("holz", 0.0)
+	var stein_total: float = r.get("steine", 0) + wh.get("steine", 0.0)
+	_labels["holz"].text = "Holz: %d (%+.0f)" % [holz_total, report.get("holz", 0)]
+	_labels["steine"].text = "Stein: %d (%+.0f)" % [stein_total, report.get("steine", 0)]
 	_labels["satoshis"].text = "₿ %d (%+.0f)" % [r["satoshis"], report["satoshis"]]
 	_labels["technikpunkte"].text = "Technik: %d (%+.0f)" % [
 		r["technikpunkte"], report["technikpunkte"]]
@@ -381,6 +384,19 @@ func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
 
 	if bonus > 0.0:
 		lines.append("Bezirks-Bonus: +%d %% (gleiche Nachbarn)" % int(round(bonus * 100)))
+
+	if building_id == "lagerhaus":
+		var b := GameState.get_building_at_cell(cell)
+		if b.has("storage") and not b["storage"].is_empty():
+			lines.append("Lagerbestand:")
+			for res_name in b["storage"]:
+				var amt: float = b["storage"][res_name]
+				if amt > 0.0:
+					lines.append("  %s: %.0f / %d" % [
+						GameData.get_resource_label(str(res_name)), amt,
+						GameData.LAGERHAUS_CAPACITY])
+		else:
+			lines.append("Lager: leer")
 
 	if data.get("ist_farm", false):
 		var counts: Dictionary = GameState.get_farm_field_counts(cell)

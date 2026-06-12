@@ -104,6 +104,17 @@ func _refresh_stats() -> void:
 		lines.append("  %s: %d" % [GameData.get_crop_name(str(crop)), int(counts[crop])])
 		total += int(counts[crop])
 	lines.append("Gesamt: %d / %d" % [total, GameData.FARM_MAX_FIELDS])
+	var farm := GameState.get_farm_building(_target_cell)
+	if not farm.is_empty() and farm.has("pending_delivery"):
+		var pending: Array[String] = []
+		for res_name in farm["pending_delivery"]:
+			var amt: float = farm["pending_delivery"][res_name]
+			if amt > 0.05:
+				pending.append("  %s: %.1f (wartet auf Abholung)" % [
+					GameData.get_resource_label(str(res_name)), amt])
+		if not pending.is_empty():
+			lines.append("Ausstehende Lieferung:")
+			lines.append_array(pending)
 	_stats.text = "\n".join(lines)
 
 

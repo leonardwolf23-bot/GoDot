@@ -405,9 +405,9 @@ func _try_demolish(cell: Vector2i) -> void:
 	if terrain.has(cell):
 		var t: String = terrain[cell]
 		if t == "tree":
-			GameState.add_resource("holz", 8.0)
+			GameState.queue_world_pickup(cell, "holz", 8.0)
 		elif t == "rock":
-			GameState.add_resource("steine", 6.0)
+			GameState.queue_world_pickup(cell, "steine", 6.0)
 		terrain.erase(cell)
 		queue_redraw()
 		terrain_changed.emit()

@@ -33,6 +33,7 @@ signal speed_changed(new_speed: float)
 signal notification(text: String)     ## Kurze Meldung für den Spieler.
 signal citizens_changed               ## Bürgerliste / Berufe haben sich geändert.
 signal farm_fields_changed(farm_cell: Vector2i)
+signal delivery_queue_changed
 
 # ---------------------------------------------------------------------------
 # SPIELZUSTAND (alles, was gespeichert werden muss)
@@ -105,6 +106,10 @@ var daily_report := {
 	"satoshis": 0.0, "technikpunkte": 0.0,
 	"energie_bedarf": 0.0, "energie_leistung": 0.0,
 }
+
+## Lieferaufträge: Villager holen Ware ab und bringen sie ins Lagerhaus.
+var delivery_queue: Array = []
+var _next_delivery_id: int = 1
 
 # ---------------------------------------------------------------------------
 # SPIELSTART
@@ -280,15 +285,19 @@ func _simulate_economy() -> void:
 				amount *= mods.get("technik_mult", 1.0)
 			produced[res_name] += amount
 		for res_name in data["verbrauch"]:
-			produced[res_name] -= data["verbrauch"][res_name]
+			var need: float = data["verbrauch"][res_name]
+			_withdraw_resource(res_name, need)
+			produced[res_name] -= need
 
-	_simulate_farm_field_harvest(produced, efficiency, production_mult)
+	_simulate_farm_field_harvest(efficiency, production_mult)
+	_simulate_processing_buildings(produced, efficiency, production_mult)
 
 	# --- Bürger: Steuern zahlen, Wasser und Essen verbrauchen ---------------
 	produced["satoshis"] += population * GameData.TAX_PER_CITIZEN
-	produced["wasser"] -= population * GameData.WATER_PER_CITIZEN
-	produced["essen"] -= population * GameData.FOOD_PER_CITIZEN \
-			* mods.get("essens_verbrauch_mult", 1.0)
+	produced["wasser"] -= _withdraw_resource("wasser",
+			population * GameData.WATER_PER_CITIZEN)
+	produced["essen"] -= _withdraw_resource("essen",
+			population * GameData.FOOD_PER_CITIZEN * mods.get("essens_verbrauch_mult", 1.0))
 
 	# --- Bilanz anwenden (Ressourcen können nicht unter 0 fallen) -----------
 	for res_name in produced:
@@ -298,6 +307,8 @@ func _simulate_economy() -> void:
 			daily_report[res_name] = 0.0
 		daily_report[res_name] = produced[res_name]
 		resources[res_name] = maxf(0.0, resources[res_name] + produced[res_name])
+
+	_schedule_warehouse_deliveries()
 
 
 ## Schritt 2: Gesundheitswerte langsam Richtung Zielwert bewegen.
@@ -460,7 +471,13 @@ func can_build(building_id: String) -> bool:
 	if data["forschung_noetig"] != "" \
 			and not completed_research.has(data["forschung_noetig"]):
 		return false
-	return resources["satoshis"] >= get_building_cost(building_id)
+	if resources["satoshis"] < get_building_cost(building_id):
+		return false
+	var mats: Dictionary = GameData.get_build_materials(building_id)
+	for mat in mats:
+		if get_total_stored(mat) < mats[mat]:
+			return false
+	return true
 
 
 ## Liefert die tatsächlichen Kosten (inkl. Forschungs-Rabatten).
@@ -482,14 +499,21 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		return false
 	var data := GameData.get_building(building_id)
 	resources["satoshis"] -= get_building_cost(building_id)
+	var mats: Dictionary = GameData.get_build_materials(building_id)
+	for mat in mats:
+		_withdraw_resource(mat, mats[mat])
 	var entry := {
 		"id": building_id,
 		"cell": cell,
 		"size": data["groesse"],
-		"bau_tage_uebrig": 0 if building_id == "strasse" else 1,
+		"bau_tage_uebrig": 0 if building_id == "strasse" else GameData.CONSTRUCTION_DAYS,
 	}
 	if data.get("ist_farm", false):
 		entry["farm_fields"] = []
+	if not data.get("verarbeitung", {}).is_empty() or data.get("ist_farm", false):
+		entry["pending_delivery"] = {}
+	if data.get("ist_lager", false):
+		entry["storage"] = {}
 	if building_id != "strasse" and entry["bau_tage_uebrig"] > 0:
 		assign_builder_to_construction(cell)
 	buildings.append(entry)
@@ -909,13 +933,14 @@ func clear_farm_fields(farm_origin_cell: Vector2i) -> void:
 	notification.emit("Alle Felder geleert.")
 
 
-func _simulate_farm_field_harvest(produced: Dictionary, efficiency: float,
-		production_mult: float) -> void:
+func _simulate_farm_field_harvest(efficiency: float, production_mult: float) -> void:
 	for b in buildings:
 		if not _is_built(b):
 			continue
 		if not b.has("farm_fields"):
 			continue
+		if not b.has("pending_delivery"):
+			b["pending_delivery"] = {}
 		var district_mult: float = 1.0 + get_district_bonus(b)
 		for f in b["farm_fields"]:
 			var crop: String = str(f.get("crop", ""))
@@ -923,9 +948,232 @@ func _simulate_farm_field_harvest(produced: Dictionary, efficiency: float,
 				continue
 			var amount: float = GameData.get_crop_yield(crop) * efficiency \
 					* production_mult * district_mult
-			if not produced.has(crop):
-				produced[crop] = 0.0
-			produced[crop] += amount
+			b["pending_delivery"][crop] = b["pending_delivery"].get(crop, 0.0) + amount
+			if not daily_report.has(crop):
+				daily_report[crop] = 0.0
+			daily_report[crop] += amount
+
+
+func _simulate_processing_buildings(produced: Dictionary, efficiency: float,
+		production_mult: float) -> void:
+	for b in buildings:
+		if not _is_built(b):
+			continue
+		var data: Dictionary = GameData.get_building(b["id"])
+		var inputs: Dictionary = data.get("verarbeitung", {})
+		if inputs.is_empty():
+			continue
+		var district_mult: float = 1.0 + get_district_bonus(b)
+		var can_run := true
+		for res_name in inputs:
+			if get_total_stored(res_name) < inputs[res_name] * district_mult:
+				can_run = false
+				break
+		if not can_run:
+			continue
+		for res_name in inputs:
+			_withdraw_resource(res_name, inputs[res_name] * district_mult)
+		if not b.has("pending_delivery"):
+			b["pending_delivery"] = {}
+		for res_name in data["produktion"]:
+			var amount: float = data["produktion"][res_name] * efficiency \
+					* production_mult * district_mult
+			if GameData.is_storable(res_name) and _has_lagerhaus():
+				b["pending_delivery"][res_name] = b["pending_delivery"].get(res_name, 0.0) + amount
+				if not daily_report.has(res_name):
+					daily_report[res_name] = 0.0
+				daily_report[res_name] += amount
+			else:
+				produced[res_name] = produced.get(res_name, 0.0) + amount
+				if not daily_report.has(res_name):
+					daily_report[res_name] = 0.0
+				daily_report[res_name] += amount
+
+
+# ---------------------------------------------------------------------------
+# LAGERHAUS & LIEFERUNGEN
+# ---------------------------------------------------------------------------
+
+func _has_lagerhaus() -> bool:
+	for b in buildings:
+		if b["id"] == "lagerhaus" and _is_built(b):
+			return true
+	return false
+
+
+func get_total_stored(res_name: String) -> float:
+	var total: float = resources.get(res_name, 0.0)
+	for b in buildings:
+		if b["id"] != "lagerhaus" or not _is_built(b):
+			continue
+		if b.has("storage"):
+			total += b["storage"].get(res_name, 0.0)
+	return total
+
+
+func get_warehouse_totals() -> Dictionary:
+	var totals := {}
+	for b in buildings:
+		if b["id"] != "lagerhaus" or not _is_built(b):
+			continue
+		if not b.has("storage"):
+			continue
+		for res_name in b["storage"]:
+			totals[res_name] = totals.get(res_name, 0.0) + b["storage"][res_name]
+	return totals
+
+
+## Öffentliche Variante für UI und Villager (Lager zuerst, dann global).
+func withdraw_resource(res_name: String, amount: float) -> float:
+	return _withdraw_resource(res_name, amount)
+
+
+func _withdraw_resource(res_name: String, amount: float) -> float:
+	var left: float = amount
+	for b in buildings:
+		if left <= 0.0:
+			break
+		if b["id"] != "lagerhaus" or not _is_built(b):
+			continue
+		if not b.has("storage"):
+			b["storage"] = {}
+		var stored: float = b["storage"].get(res_name, 0.0)
+		var take: float = minf(left, stored)
+		if take > 0.0:
+			b["storage"][res_name] = stored - take
+			left -= take
+	if left > 0.0:
+		var global_amt: float = resources.get(res_name, 0.0)
+		var take: float = minf(left, global_amt)
+		resources[res_name] = global_amt - take
+		left -= take
+	return amount - left
+
+
+func get_nearest_lagerhaus_with_space(from_cell: Vector2i, res_name: String,
+		_amount: float) -> Dictionary:
+	var best: Dictionary = {}
+	var best_dist := 999999
+	for b in buildings:
+		if b["id"] != "lagerhaus" or not _is_built(b):
+			continue
+		if not b.has("storage"):
+			b["storage"] = {}
+		var cur: float = b["storage"].get(res_name, 0.0)
+		if cur >= GameData.LAGERHAUS_CAPACITY:
+			continue
+		var d: int = absi(from_cell.x - b["cell"].x) + absi(from_cell.y - b["cell"].y)
+		if d < best_dist:
+			best_dist = d
+			best = b
+	return best
+
+
+func deposit_to_lager(lager_cell: Vector2i, res_name: String, amount: float) -> float:
+	for b in buildings:
+		if b["cell"] != lager_cell or b["id"] != "lagerhaus":
+			continue
+		if not b.has("storage"):
+			b["storage"] = {}
+		var cur: float = b["storage"].get(res_name, 0.0)
+		var free: float = maxf(0.0, GameData.LAGERHAUS_CAPACITY - cur)
+		var add: float = minf(amount, free)
+		if add > 0.0:
+			b["storage"][res_name] = cur + add
+			resources_changed.emit()
+		return add
+	return 0.0
+
+
+func _deposit_to_nearest_lager(from_cell: Vector2i, res_name: String,
+		amount: float) -> float:
+	var lager: Dictionary = get_nearest_lagerhaus_with_space(from_cell, res_name, amount)
+	if lager.is_empty():
+		add_resource(res_name, amount)
+		return amount
+	return deposit_to_lager(lager["cell"], res_name, amount)
+
+
+func enqueue_delivery(source_cell: Vector2i, dest_cell: Vector2i,
+		resource: String, amount: float) -> void:
+	delivery_queue.append({
+		"id": _next_delivery_id,
+		"source_cell": source_cell,
+		"dest_cell": dest_cell,
+		"resource": resource,
+		"amount": amount,
+	})
+	_next_delivery_id += 1
+	delivery_queue_changed.emit()
+
+
+func queue_world_pickup(pickup_cell: Vector2i, resource: String, amount: float) -> void:
+	if not _has_lagerhaus():
+		add_resource(resource, amount)
+		return
+	var lager: Dictionary = get_nearest_lagerhaus_with_space(
+			pickup_cell, resource, amount)
+	if lager.is_empty():
+		add_resource(resource, amount)
+		return
+	enqueue_delivery(pickup_cell, lager["cell"], resource, amount)
+
+
+func pop_delivery_job() -> Dictionary:
+	if delivery_queue.is_empty():
+		return {}
+	var job: Dictionary = delivery_queue[0]
+	delivery_queue.remove_at(0)
+	delivery_queue_changed.emit()
+	return job
+
+
+func complete_delivery(job: Dictionary) -> void:
+	if job.is_empty():
+		return
+	var deposited: float = deposit_to_lager(job["dest_cell"], job["resource"],
+			job["amount"])
+	var overflow: float = job["amount"] - deposited
+	if overflow > 0.0:
+		add_resource(job["resource"], overflow)
+	if deposited > 0.0:
+		notification.emit("%s ins Lagerhaus: +%.0f" % [
+			GameData.get_resource_label(job["resource"]), deposited])
+
+
+func _schedule_warehouse_deliveries() -> void:
+	for b in buildings:
+		if not b.has("pending_delivery"):
+			continue
+		for res_name in b["pending_delivery"].keys():
+			var amt: float = b["pending_delivery"][res_name]
+			while amt > 0.5:
+				var batch: float = minf(amt, 6.0)
+				if not _has_lagerhaus():
+					add_resource(res_name, batch)
+					amt -= batch
+					continue
+				var lager: Dictionary = get_nearest_lagerhaus_with_space(
+						b["cell"], res_name, batch)
+				if lager.is_empty():
+					add_resource(res_name, batch)
+					amt -= batch
+					continue
+				enqueue_delivery(b["cell"], lager["cell"], res_name, batch)
+				amt -= batch
+			b["pending_delivery"][res_name] = 0.0
+
+
+func take_pending_from_building(building_cell: Vector2i, resource: String,
+		amount: float) -> float:
+	for b in buildings:
+		if b["cell"] != building_cell or not b.has("pending_delivery"):
+			continue
+		var avail: float = b["pending_delivery"].get(resource, 0.0)
+		var take: float = minf(amount, avail)
+		b["pending_delivery"][resource] = avail - take
+		return take
+	return 0.0
 
 
 func _simulate_citizen_needs() -> void:
@@ -967,7 +1215,23 @@ func to_save_dict() -> Dictionary:
 		}
 		if b.has("farm_fields"):
 			saved["farm_fields"] = b["farm_fields"].duplicate(true)
+		if b.has("pending_delivery"):
+			saved["pending_delivery"] = b["pending_delivery"].duplicate(true)
+		if b.has("storage"):
+			saved["storage"] = b["storage"].duplicate(true)
 		building_list.append(saved)
+
+	var delivery_list: Array = []
+	for job in delivery_queue:
+		delivery_list.append({
+			"id": job["id"],
+			"source_x": job["source_cell"].x,
+			"source_y": job["source_cell"].y,
+			"dest_x": job["dest_cell"].x,
+			"dest_y": job["dest_cell"].y,
+			"resource": job["resource"],
+			"amount": job["amount"],
+		})
 
 	var citizen_list: Array = []
 	for c in citizens:
@@ -997,6 +1261,8 @@ func to_save_dict() -> Dictionary:
 		"completed_research": completed_research.duplicate(),
 		"active_research": active_research,
 		"research_days_left": research_days_left,
+		"delivery_queue": delivery_list,
+		"next_delivery_id": _next_delivery_id,
 	}
 
 
@@ -1033,7 +1299,25 @@ func from_save_dict(data: Dictionary) -> void:
 			entry["farm_fields"] = b["farm_fields"]
 		elif GameData.get_building(b["id"]).get("ist_farm", false):
 			entry["farm_fields"] = []
+		if b.has("pending_delivery"):
+			entry["pending_delivery"] = b["pending_delivery"]
+		if b.has("storage"):
+			entry["storage"] = b["storage"]
+		elif b["id"] == "lagerhaus":
+			entry["storage"] = {}
 		buildings.append(entry)
+
+	delivery_queue = []
+	_next_delivery_id = int(data.get("next_delivery_id", 1))
+	if data.has("delivery_queue"):
+		for job in data["delivery_queue"]:
+			delivery_queue.append({
+				"id": int(job["id"]),
+				"source_cell": Vector2i(int(job["source_x"]), int(job["source_y"])),
+				"dest_cell": Vector2i(int(job["dest_x"]), int(job["dest_y"])),
+				"resource": job["resource"],
+				"amount": job["amount"],
+			})
 
 	citizens = []
 	_next_citizen_id = int(data.get("next_citizen_id", 1))
