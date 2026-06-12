@@ -26,6 +26,7 @@ var _background: TextureRect = null
 var _nav_layer: Control = null
 var _active_panel: String = "build"
 var _bar_size: Vector2 = REF_SIZE
+var _main_menu_confirm: ConfirmationDialog = null
 
 
 func _ready() -> void:
@@ -64,6 +65,14 @@ func _ready() -> void:
 	for nav in NAV_BUTTONS:
 		_create_nav_button(str(nav["id"]), str(nav["label"]), float(nav["y"]), float(nav["h"]))
 
+	_main_menu_confirm = ConfirmationDialog.new()
+	_main_menu_confirm.title = "Hauptmenü"
+	_main_menu_confirm.dialog_text = "Wirklich zum Hauptmenü zurück?\nUngespeicherter Fortschritt geht verloren."
+	_main_menu_confirm.ok_button_text = "Ja, verlassen"
+	_main_menu_confirm.cancel_button_text = "Abbrechen"
+	_main_menu_confirm.confirmed.connect(_go_to_main_menu)
+	add_child(_main_menu_confirm)
+
 	call_deferred("_update_layout")
 	get_viewport().size_changed.connect(_update_layout)
 
@@ -88,7 +97,7 @@ func add_panel(panel_id: String, panel: Control) -> void:
 
 func show_panel(panel_id: String) -> void:
 	if panel_id == "main_menu":
-		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		_main_menu_confirm.popup_centered()
 		return
 	if panel_id == _active_panel and panel_id != "build":
 		panel_id = "build"
@@ -123,6 +132,10 @@ func _on_nav_pressed(panel_id: String) -> void:
 		show_panel("build")
 		return
 	show_panel(panel_id)
+
+
+func _go_to_main_menu() -> void:
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 func _update_layout() -> void:

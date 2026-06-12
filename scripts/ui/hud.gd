@@ -5,8 +5,7 @@ extends Control
 ## Die Haupt-Benutzeroberfläche im Spiel. Sie wird komplett per Code
 ## aufgebaut (kein Gefummel im Editor nötig) und besteht aus:
 ##
-##   - Obere Leiste: Ressourcen, Bevölkerung, veganer Anteil, Energie,
-##     Datum und Geschwindigkeits-Buttons
+##   - Linke Leiste: Ressourcen, Bevölkerung, veganer Anteil, Energie, Datum
 ##   - Rechte Leiste: Buttons für Forschung, Gesundheit, Deutschland,
 ##     Speichern und Hauptmenü
 ##   - Unten: grafisches HUD (Research / Build / Main Menu)
@@ -95,20 +94,33 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------------------
-# OBERE LEISTE
+# LINKE RESSOURCEN-LEISTE
 # ---------------------------------------------------------------------------
 
 func _create_top_bar() -> void:
 	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	panel.offset_left = 0.0
+	panel.offset_top = 0.0
+	panel.offset_right = 210.0
+	panel.offset_bottom = 0.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.07, 0.09, 0.82)
+	style.border_color = Color(0.35, 0.55, 0.45, 0.7)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(0)
+	style.set_content_margin_all(8)
+	panel.add_theme_stylebox_override("panel", style)
 	add_child(panel)
 
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 18)
+	var bar := VBoxContainer.new()
+	bar.alignment = BoxContainer.ALIGNMENT_BEGIN
+	bar.add_theme_constant_override("separation", 6)
 	panel.add_child(bar)
 
-	## Reihenfolge der Anzeigen in der Leiste.
+	## Reihenfolge der Anzeigen an der linken Kante.
 	var entries := [
 		["wasser", "Wasser"],
 		["essen", "Essen"],
@@ -122,19 +134,23 @@ func _create_top_bar() -> void:
 		["datum", "Datum"],
 	]
 	for entry in entries:
-		## Kleines Icon vor dem Wert (falls eine Icon-Datei existiert).
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		bar.add_child(row)
+
 		var icon := _load_icon(entry[0])
 		if icon != null:
 			var icon_rect := TextureRect.new()
 			icon_rect.texture = icon
-			icon_rect.custom_minimum_size = Vector2(22, 22)
+			icon_rect.custom_minimum_size = Vector2(20, 20)
 			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			bar.add_child(icon_rect)
+			row.add_child(icon_rect)
 
 		var label := Label.new()
-		label.add_theme_font_size_override("font_size", 15)
-		bar.add_child(label)
+		label.add_theme_font_size_override("font_size", 13)
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		row.add_child(label)
 		_labels[entry[0]] = label
 
 
