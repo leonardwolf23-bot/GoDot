@@ -24,12 +24,12 @@ SaveManager="*res://scripts/autoload/save_manager.gd"
 
 [display]
 
-window/size/viewport_width=1600
-window/size/viewport_height=900
+window/size/viewport_width=1920
+window/size/viewport_height=1080
 window/size/mode=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/stretch/scale=1.25
+window/stretch/scale=1.0
 
 [input_devices]
 
