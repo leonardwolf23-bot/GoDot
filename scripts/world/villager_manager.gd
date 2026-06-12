@@ -203,7 +203,7 @@ func _update_builder(c: Dictionary, node: VillagerNode) -> void:
 			return
 
 	if c["work_cell"] != Vector2i(-1, -1):
-		var site := c["work_cell"]
+		var site: Vector2i = c["work_cell"]
 		var b := GameState.get_building_at_cell(site)
 		if not b.is_empty() and b.get("bau_tage_uebrig", 0) > 0:
 			node.position = _grid.cell_to_world_center(site + Vector2i(0, 1))
@@ -220,7 +220,7 @@ func _update_builder(c: Dictionary, node: VillagerNode) -> void:
 func _update_farmer(c: Dictionary, node: VillagerNode) -> void:
 	if c["work_cell"] == Vector2i(-1, -1):
 		return
-	var farm := c["work_cell"]
+	var farm: Vector2i = c["work_cell"]
 	var b := GameState.get_building_at_cell(farm)
 	if b.is_empty():
 		return
