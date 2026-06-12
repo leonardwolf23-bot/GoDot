@@ -151,25 +151,25 @@ static func _get_sprite_frames() -> SpriteFrames:
 		return _shared_sprite_frames
 
 	var frames := SpriteFrames.new()
-	var directions := [
+	var directions: Array[String] = [
 		"south", "south-east", "east", "north-east",
 		"north", "north-west", "west", "south-west",
 	]
 	for dir in directions:
-		var dir_key := dir.replace("-", "_")
+		var dir_key: String = dir.replace("-", "_")
 
-		var walk_anim := "walking_%s" % dir_key
+		var walk_anim: String = "walking_%s" % dir_key
 		frames.add_animation(walk_anim)
 		frames.set_animation_speed(walk_anim, WALK_FPS)
 		frames.set_animation_loop(walk_anim, true)
 		for i in range(6):
-			var frame_path := "%sVillager/animations/walking/%s/frame_%03d.png" \
+			var frame_path: String = "%sVillager/animations/walking/%s/frame_%03d.png" \
 					% [VILLAGER_ROOT, dir, i]
-			var tex := _load_texture_safe(frame_path)
+			var tex: Texture2D = _load_texture_safe(frame_path)
 			if tex != null:
 				frames.add_frame(walk_anim, tex)
 
-		var idle_anim := "idle_%s" % dir_key
+		var idle_anim: String = "idle_%s" % dir_key
 		frames.add_animation(idle_anim)
 		frames.set_animation_speed(idle_anim, 1.0)
 		frames.set_animation_loop(idle_anim, true)
