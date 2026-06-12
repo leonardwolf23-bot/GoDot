@@ -27,6 +27,7 @@ var _build_menu: BuildMenu
 var _research_panel: ResearchPanel
 var _health_panel: HealthPanel
 var _region_panel: RegionPanel
+var _building_inspect_panel: BuildingInspectPanel
 
 ## Meldungs-Anzeige.
 var _notification_label: Label
@@ -49,6 +50,9 @@ func setup(p_grid: CityGrid) -> void:
 	grid = p_grid
 	_build_menu.grid = grid
 	grid.building_hovered.connect(_on_building_hovered)
+	grid.building_clicked.connect(_on_building_clicked)
+	if _building_inspect_panel != null:
+		_building_inspect_panel.setup(grid)
 
 
 func _ready() -> void:
@@ -75,6 +79,8 @@ func _ready() -> void:
 	add_child(_health_panel)
 	_region_panel = RegionPanel.new()
 	add_child(_region_panel)
+	_building_inspect_panel = BuildingInspectPanel.new()
+	add_child(_building_inspect_panel)
 
 	var game_over_screen := GameOverScreen.new()
 	add_child(game_over_screen)
@@ -108,6 +114,8 @@ func _create_top_bar() -> void:
 	var entries := [
 		["wasser", "Wasser"],
 		["essen", "Essen"],
+		["holz", "Holz"],
+		["steine", "Steine"],
 		["satoshis", "Satoshis"],
 		["technikpunkte", "Technik"],
 		["bevoelkerung", "Bevölkerung"],
@@ -167,6 +175,8 @@ func _refresh_top_bar() -> void:
 	var report := GameState.daily_report
 	_labels["wasser"].text = "Wasser: %d (%+.0f)" % [r["wasser"], report["wasser"]]
 	_labels["essen"].text = "Essen: %d (%+.0f)" % [r["essen"], report["essen"]]
+	_labels["holz"].text = "Holz: %d (%+.0f)" % [r.get("holz", 0), report.get("holz", 0)]
+	_labels["steine"].text = "Stein: %d (%+.0f)" % [r.get("steine", 0), report.get("steine", 0)]
 	_labels["satoshis"].text = "₿ %d (%+.0f)" % [r["satoshis"], report["satoshis"]]
 	_labels["technikpunkte"].text = "Technik: %d (%+.0f)" % [
 		r["technikpunkte"], report["technikpunkte"]]
@@ -218,6 +228,7 @@ func _create_side_buttons() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	add_child(vbox)
 
+	_add_side_button(vbox, "Bauarbeiter ausbilden", func(): GameState.train_builder())
 	_add_side_button(vbox, "Forschung", func(): _research_panel.open())
 	_add_side_button(vbox, "Gesundheit", func():
 		_health_panel.visible = not _health_panel.visible)
@@ -317,6 +328,12 @@ func _on_building_hovered(info: Dictionary) -> void:
 	_hover_label.text = _make_building_info_text(info["id"], info["cell"])
 	_hover_panel.visible = true
 	_position_hover_panel()
+
+
+func _on_building_clicked(info: Dictionary) -> void:
+	if info.is_empty() or _building_inspect_panel == null:
+		return
+	_building_inspect_panel.open_for_building(info["id"], info["cell"])
 
 
 ## Baut den Tooltip-Text: Was macht dieses Gebäude PRO TAG?

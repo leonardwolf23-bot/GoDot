@@ -1,248 +1,187 @@
 class_name VillagerManager
 extends Node2D
-## Verwaltet Dorfbewohner und weist Essen-Lieferungen über das Straßennetz zu.
-
-const MAX_VILLAGERS := 4
-const MAX_PENDING_JOBS := 8
+## Spawnt einen Villager pro Bürger und steuert Berufe / Bewegung.
 
 var _grid: CityGrid = null
-var _villagers: Array[VillagerNode] = []
-var _job_queue: Array[Dictionary] = []
+var _nodes: Dictionary = {}  # citizen_id -> VillagerNode
+var _pending_arrivals: Array[int] = []
 
 
 func setup(grid: CityGrid) -> void:
 	_grid = grid
-	if not GameState.day_passed.is_connected(_on_day_passed):
-		GameState.day_passed.connect(_on_day_passed)
-	if not GameState.building_completed.is_connected(_on_building_completed):
-		GameState.building_completed.connect(_on_building_completed)
+	GameState.citizens_changed.connect(_sync_citizens)
+	GameState.population_changed.connect(_on_population_changed)
+	GameState.building_registered.connect(_on_building_registered)
+	GameState.day_passed.connect(_on_day_passed)
+	call_deferred("_sync_citizens")
 
-	call_deferred("_spawn_starting_villager")
+
+func _sync_citizens() -> void:
+	var alive_ids: Dictionary = {}
+	for c in GameState.citizens:
+		alive_ids[c["id"]] = true
+		if not _nodes.has(c["id"]):
+			_spawn_node_for_citizen(c)
+		else:
+			var node: VillagerNode = _nodes[c["id"]]
+			node.set_profession(c["profession"])
+
+	for cid in _nodes.keys():
+		if not alive_ids.has(cid):
+			var old: VillagerNode = _nodes[cid]
+			if is_instance_valid(old):
+				old.queue_free()
+			_nodes.erase(cid)
+
+	_update_all_jobs()
 
 
-func _spawn_starting_villager() -> void:
-	if _grid == null:
+func _spawn_node_for_citizen(c: Dictionary) -> void:
+	var node := VillagerNode.new()
+	add_child(node)
+	node.setup(_grid, c["id"])
+	node.set_profession(c["profession"])
+	node.arrived.connect(_on_villager_arrived.bind(c["id"]))
+
+	var s := _grid.get_map_size()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = c["id"] * 7919
+	var cell := Vector2i(
+			rng.randi_range(3, s - 2),
+			rng.randi_range(1, s - 2)
+	)
+	if _grid.is_walkable(cell):
+		node.position = _grid.cell_to_world_center(cell)
+	else:
+		node.position = _grid.cell_to_world_center(_grid.get_center_cell() + Vector2i(2, 3))
+
+	_nodes[c["id"]] = node
+
+
+func _on_population_changed() -> void:
+	for c in GameState.citizens:
+		if not _nodes.has(c["id"]):
+			_pending_arrivals.append(c["id"])
+	_sync_citizens()
+	call_deferred("_process_arrivals")
+
+
+func _process_arrivals() -> void:
+	for cid in _pending_arrivals.duplicate():
+		if not _nodes.has(cid):
+			continue
+		var node: VillagerNode = _nodes[cid]
+		var edges: Array[String] = ["west", "east", "north", "south"]
+		node.position = _grid.get_map_entry_position(edges[randi() % edges.size()])
+		var housing := _find_free_housing_cell()
+		if housing != Vector2i(-1, -1):
+			GameState.assign_housing(cid, housing)
+			node.walk_to_cell(housing)
+		_pending_arrivals.erase(cid)
+
+
+func _find_free_housing_cell() -> Vector2i:
+	for b in GameState.buildings:
+		if b.get("bau_tage_uebrig", 0) > 0:
+			continue
+		var data: Dictionary = GameData.get_building(b["id"])
+		if data.get("wohnraum", 0) <= 0:
+			continue
+		var housed := 0
+		for c in GameState.citizens:
+			if c["housing_cell"] == b["cell"]:
+				housed += 1
+		if housed < data["wohnraum"]:
+			return b["cell"] + Vector2i(0, data["groesse"].y)
+	return Vector2i(-1, -1)
+
+
+func _on_building_registered(building_id: String) -> void:
+	if building_id == "strasse":
 		return
-	var rathaus := _find_building("rathaus")
-	if rathaus.is_empty():
-		return
-	var access := _grid.get_road_cells_adjacent_to_building(
-			rathaus["cell"], rathaus["size"])
-	if access.is_empty():
-		return
-	_spawn_villager_at(access[0])
-
-
-func _spawn_villager_at(road_cell: Vector2i) -> VillagerNode:
-	if _villagers.size() >= MAX_VILLAGERS:
-		return null
-	var villager := VillagerNode.new()
-	add_child(villager)
-	villager.setup(_grid)
-	villager.position = _grid.cell_to_world(road_cell)
-	villager.delivery_finished.connect(_on_villager_delivery_finished)
-	_villagers.append(villager)
-	return villager
+	call_deferred("_update_all_jobs")
 
 
 func _on_day_passed() -> void:
-	if GameState.daily_report.get("essen", 0.0) <= 0.0:
-		return
-	_schedule_food_deliveries(1)
+	_update_all_jobs()
 
 
-func _on_building_completed(cell: Vector2i) -> void:
-	for b in GameState.buildings:
-		if b["cell"] == cell and (_is_food_source(b) or _is_food_destination(b)):
-			_schedule_food_deliveries(1)
+func _update_all_jobs() -> void:
+	for c in GameState.citizens:
+		if not _nodes.has(c["id"]):
+			continue
+		var node: VillagerNode = _nodes[c["id"]]
+		if node.is_moving():
+			continue
+
+		match c["profession"]:
+			GameData.PROFESSION_BUILDER:
+				_update_builder(c, node)
+			GameData.PROFESSION_FARMER:
+				_update_farmer(c, node)
+			_:
+				_update_villager(c, node)
+
+
+func _update_builder(c: Dictionary, node: VillagerNode) -> void:
+	if c["days_since_meal"] > GameData.BUILDER_HUNGER_DAYS:
+		var food_cell := _find_food_building_cell()
+		if food_cell != Vector2i(-1, -1):
+			node.walk_to_cell(food_cell)
 			return
 
-
-func _schedule_food_deliveries(count: int) -> void:
-	var sources := _get_food_sources()
-	var destinations := _get_food_destinations()
-	if sources.is_empty() or destinations.is_empty():
-		return
-
-	for i in range(count):
-		if _job_queue.size() >= MAX_PENDING_JOBS:
-			break
-		var source: Dictionary = sources[i % sources.size()]
-		var dest: Dictionary = _pick_best_destination(source, destinations)
-		if dest.is_empty():
-			continue
-		_enqueue_food_job(source, dest)
-
-	_process_queue()
-
-
-func _enqueue_food_job(source: Dictionary, dest: Dictionary) -> void:
-	var source_roads := _grid.get_road_cells_adjacent_to_building(
-			source["cell"], source["size"])
-	var dest_roads := _grid.get_road_cells_adjacent_to_building(
-			dest["cell"], dest["size"])
-	if source_roads.is_empty() or dest_roads.is_empty():
-		return
-
-	var route_path := _grid.find_road_path_between_buildings(
-			source["cell"], source["size"],
-			dest["cell"], dest["size"])
-	if route_path.is_empty():
-		return
-
-	var pickup_cell: Vector2i = route_path[0]
-
-	for job in _job_queue:
-		if job.get("source_cell") == source["cell"] \
-				and job.get("dest_cell") == dest["cell"]:
+	if c["work_cell"] != Vector2i(-1, -1):
+		var site := c["work_cell"]
+		var b := GameState.get_building_at_cell(site)
+		if not b.is_empty() and b.get("bau_tage_uebrig", 0) > 0:
+			node.position = _grid.cell_to_world_center(site + Vector2i(0, 1))
 			return
 
-	_job_queue.append({
-		"resource": "essen",
-		"source_id": source["id"],
-		"source_cell": source["cell"],
-		"dest_id": dest["id"],
-		"dest_cell": dest["cell"],
-		"route_path": route_path,
-		"pickup_cell": pickup_cell,
-	})
+	c["work_cell"] = Vector2i(-1, -1)
+	for b in GameState.buildings:
+		if b.get("bau_tage_uebrig", 0) > 0:
+			if GameState.assign_builder_to_construction(b["cell"]):
+				node.walk_to_cell(b["cell"] + Vector2i(0, 1))
+				return
 
 
-func _process_queue() -> void:
-	while not _job_queue.is_empty():
-		var villager := _get_idle_villager()
-		if villager == null:
-			if _villagers.size() < MAX_VILLAGERS:
-				var spawn_cell: Vector2i = _job_queue[0]["route_path"][0]
-				villager = _spawn_villager_at(spawn_cell)
-			if villager == null:
-				break
-
-		var job: Dictionary = _job_queue.pop_front()
-		var full_path := _build_villager_path(villager, job)
-		if full_path.is_empty():
-			continue
-		villager.start_delivery(job, full_path, job["pickup_cell"])
-
-
-func _build_villager_path(villager: VillagerNode, job: Dictionary) -> Array[Vector2i]:
-	var route: Array[Vector2i] = job["route_path"]
-	var start_cell := _grid.world_to_cell(villager.position)
-	if not _grid.roads.has(start_cell):
-		start_cell = route[0]
-
-	if start_cell == route[0]:
-		return route
-
-	var to_source := _grid.find_path_on_roads(start_cell, route[0])
-	if to_source.is_empty():
-		return route
-
-	var combined: Array[Vector2i] = to_source.duplicate()
-	for i in range(1, route.size()):
-		combined.append(route[i])
-	return combined
-
-
-func _get_idle_villager() -> VillagerNode:
-	for v in _villagers:
-		if is_instance_valid(v) and v.is_available():
-			return v
-	return null
-
-
-func _on_villager_delivery_finished(job: Dictionary) -> void:
-	if job.is_empty():
+func _update_farmer(c: Dictionary, node: VillagerNode) -> void:
+	if c["work_cell"] == Vector2i(-1, -1):
 		return
-	var dest_name: String = GameData.get_building(job.get("dest_id", "")).get("name", "")
-	if dest_name != "":
-		GameState.notification.emit("Essen geliefert: %s" % dest_name)
-	_process_queue()
+	var farm := c["work_cell"]
+	var data: Dictionary = GameData.get_building(
+			GameState.get_building_at_cell(farm).get("id", ""))
+	if data.is_empty():
+		return
+	node.position = _grid.cell_to_world_center(farm + Vector2i(0, data["groesse"].y))
 
 
-func _get_food_sources() -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
+func _update_villager(_c: Dictionary, node: VillagerNode) -> void:
+	if node.position.distance_to(_grid.cell_to_world_center(_grid.get_center_cell())) > 800:
+		node.walk_to_cell(_grid.get_center_cell() + Vector2i(2, 2))
+
+
+func _find_food_building_cell() -> Vector2i:
 	for b in GameState.buildings:
-		if not _is_built(b):
-			continue
-		if not _is_food_source(b):
+		if b.get("bau_tage_uebrig", 0) > 0:
 			continue
 		var data: Dictionary = GameData.get_building(b["id"])
-		var size: Vector2i = data["groesse"]
-		if _grid.get_road_cells_adjacent_to_building(b["cell"], size).is_empty():
-			continue
-		result.append({
-			"id": b["id"],
-			"cell": b["cell"],
-			"size": size,
-		})
-	return result
+		if data.get("verbrauch", {}).get("essen", 0.0) > 0.0 \
+				or b["id"] == "food_court" or b["id"] == "rathaus":
+			return b["cell"] + Vector2i(0, 1)
+	return Vector2i(-1, -1)
 
 
-func _get_food_destinations() -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for b in GameState.buildings:
-		if not _is_built(b):
-			continue
-		if not _is_food_destination(b):
-			continue
-		var data: Dictionary = GameData.get_building(b["id"])
-		var size: Vector2i = data["groesse"]
-		if _grid.get_road_cells_adjacent_to_building(b["cell"], size).is_empty():
-			continue
-		result.append({
-			"id": b["id"],
-			"cell": b["cell"],
-			"size": size,
-		})
-	return result
+func _on_villager_arrived(citizen_id: int) -> void:
+	var c := GameState.get_citizen(citizen_id)
+	if c.is_empty():
+		return
+	if c["profession"] == GameData.PROFESSION_BUILDER \
+			and c["days_since_meal"] > GameData.BUILDER_HUNGER_DAYS:
+		if resources_has_food():
+			GameState.feed_builder(citizen_id)
+			GameState.add_resource("essen", -2.0)
 
 
-func _pick_best_destination(source: Dictionary,
-		destinations: Array[Dictionary]) -> Dictionary:
-	var best: Dictionary = {}
-	var best_len := 999999
-	for dest in destinations:
-		if dest["cell"] == source["cell"]:
-			continue
-		var path := _grid.find_road_path_between_buildings(
-				source["cell"], source["size"],
-				dest["cell"], dest["size"])
-		if path.is_empty():
-			continue
-		if path.size() < best_len:
-			best_len = path.size()
-			best = dest
-	return best
-
-
-func _is_food_source(b: Dictionary) -> bool:
-	if b["id"] == "rathaus" or b["id"] == "strasse":
-		return false
-	var data: Dictionary = GameData.get_building(b["id"])
-	return data.get("produktion", {}).get("essen", 0.0) > 0.0
-
-
-func _is_food_destination(b: Dictionary) -> bool:
-	if b["id"] == "strasse":
-		return false
-	var data: Dictionary = GameData.get_building(b["id"])
-	if data.get("verbrauch", {}).get("essen", 0.0) > 0.0:
-		return true
-	return b["id"] == "rathaus"
-
-
-func _is_built(b: Dictionary) -> bool:
-	return b.get("bau_tage_uebrig", 0) <= 0
-
-
-func _find_building(building_id: String) -> Dictionary:
-	for b in GameState.buildings:
-		if b["id"] == building_id:
-			var data: Dictionary = GameData.get_building(b["id"])
-			return {
-				"id": b["id"],
-				"cell": b["cell"],
-				"size": data["groesse"],
-			}
-	return {}
+func resources_has_food() -> bool:
+	return GameState.resources.get("essen", 0.0) > 0.0

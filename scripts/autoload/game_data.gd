@@ -16,16 +16,45 @@ extends Node
 # ---------------------------------------------------------------------------
 
 ## Wie viele ECHTE Sekunden ein Spieltag bei Geschwindigkeit 1x dauert.
-const SECONDS_PER_DAY: float = 5.0
+const SECONDS_PER_DAY: float = 10.0
+
+## Berufe der Bürger.
+const PROFESSION_VILLAGER := "villager"
+const PROFESSION_FARMER := "farmer"
+const PROFESSION_BUILDER := "builder"
+
+## Farm-Gebäude, die einen Bauer brauchen.
+const FARM_BUILDING_IDS: Array[String] = ["bauernhof", "exotischer_hof"]
+
+## Bauarbeiter: Hunger nach einem Monat, Tod nach zwei Monaten ohne Essen.
+const BUILDER_HUNGER_DAYS: int = 30
+const BUILDER_STARVE_DAYS: int = 60
 
 ## Startwerte eines neuen Spiels.
 const START_RESOURCES := {
 	"wasser": 200.0,
 	"essen": 200.0,
+	"holz": 80.0,
+	"steine": 60.0,
 	"satoshis": 1200.0,
 	"technikpunkte": 0.0,
+	"sojabohnen": 0.0,
+	"seitanwuerste": 0.0,
+	"hafer": 0.0,
+	"brot": 0.0,
+	"vaese": 0.0,
+	"proteinriegel": 0.0,
+	"hefeflocken": 0.0,
+	"sojamilch": 0.0,
+	"hafermilch": 0.0,
+	"tofu": 0.0,
+	"cashewkerne": 0.0,
+	"avocados": 0.0,
+	"erbsen": 0.0,
+	"mais": 0.0,
+	"weizen": 0.0,
 }
-const START_POPULATION: int = 20
+const START_POPULATION: int = 30
 const START_VEGAN_SHARE: float = 100.0
 const START_DATE := {"tag": 1, "monat": 1, "jahr": 2040}
 
@@ -112,7 +141,7 @@ const BUILDINGS := {
 	# ----------------------------- WOHNEN ---------------------------------
 	"wohnmodul": {
 		"name": "Wohnmodul",
-		"beschreibung": "Kompaktes, nachhaltiges Wohnhaus für 8 Bürger.",
+		"beschreibung": "Kompaktes, nachhaltiges Wohnhaus für 8 Bürger. Versorgt Bewohner mit Essen.",
 		"kategorie": "wohnen",
 		"kosten": 150,
 		"groesse": Vector2i(1, 1),
@@ -120,7 +149,7 @@ const BUILDINGS := {
 		"hoehe": 36,
 		"wohnraum": 8,
 		"produktion": {},
-		"verbrauch": {},
+		"verbrauch": {"essen": 4.0},
 		"energie_bedarf": 2,
 		"energie_leistung": 0,
 		"effekte": {},
@@ -184,21 +213,83 @@ const BUILDINGS := {
 		"baubar": true,
 	},
 	"wasserwerk": {
-		"name": "Nachhaltiges Wasserwerk",
-		"beschreibung": "Hochmoderne Wassergewinnung (+40 Wasser/Tag).",
+		"name": "Wasserwerk",
+		"beschreibung": "Pumpt Wasser aus dem Fluss (+35 Wasser/Tag). Muss am Fluss liegen.",
 		"kategorie": "wasser",
-		"kosten": 650,
+		"kosten": 450,
 		"groesse": Vector2i(1, 1),
 		"farbe": Color(0.25, 0.5, 0.85),
 		"hoehe": 40,
 		"wohnraum": 0,
-		"produktion": {"wasser": 40.0},
+		"produktion": {"wasser": 35.0},
 		"verbrauch": {},
-		"energie_bedarf": 6,
+		"energie_bedarf": 4,
 		"energie_leistung": 0,
 		"effekte": {},
-		"forschung_noetig": "wassergewinnung",
+		"forschung_noetig": "",
 		"braucht_strasse": true,
+		"braucht_fluss": true,
+		"baubar": true,
+	},
+	# ----------------------------- ROHSTOFFE / LAGER ----------------------
+	"lagerhaus": {
+		"name": "Lagerhaus",
+		"beschreibung": "Lagert Holz, Steine und Vorräte.",
+		"kategorie": "rohstoff",
+		"kosten": 200,
+		"groesse": Vector2i(2, 2),
+		"farbe": Color(0.62, 0.48, 0.32),
+		"hoehe": 28,
+		"wohnraum": 0,
+		"produktion": {},
+		"verbrauch": {},
+		"energie_bedarf": 1,
+		"energie_leistung": 0,
+		"effekte": {},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"baubar": true,
+	},
+	"bauernhof": {
+		"name": "Bauernhof",
+		"beschreibung": "Baut Sojabohnen, Hafer, Weizen, Erbsen und Mais an (max. 6x6 Felder).",
+		"kategorie": "essen",
+		"kosten": 280,
+		"groesse": Vector2i(2, 2),
+		"farbe": Color(0.45, 0.72, 0.28),
+		"hoehe": 20,
+		"wohnraum": 0,
+		"produktion": {"sojabohnen": 6.0, "hafer": 4.0},
+		"verbrauch": {"wasser": 3.0},
+		"energie_bedarf": 2,
+		"energie_leistung": 0,
+		"effekte": {},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"ist_farm": true,
+		"farm_kulturen": ["sojabohnen", "hafer", "weizen", "erbsen", "mais"],
+		"farm_max_flaeche": Vector2i(6, 6),
+		"baubar": true,
+	},
+	"exotischer_hof": {
+		"name": "Exotischer Hof",
+		"beschreibung": "Cashew-, Avocado- und Apfelbäume.",
+		"kategorie": "essen",
+		"kosten": 420,
+		"groesse": Vector2i(2, 2),
+		"farbe": Color(0.35, 0.65, 0.22),
+		"hoehe": 24,
+		"wohnraum": 0,
+		"produktion": {"cashewkerne": 3.0},
+		"verbrauch": {"wasser": 4.0},
+		"energie_bedarf": 2,
+		"energie_leistung": 0,
+		"effekte": {},
+		"forschung_noetig": "",
+		"braucht_strasse": true,
+		"ist_farm": true,
+		"farm_kulturen": ["cashewkerne", "avocados", "apfel"],
+		"farm_max_flaeche": Vector2i(4, 4),
 		"baubar": true,
 	},
 	# ----------------------------- ESSEN ----------------------------------
@@ -645,6 +736,7 @@ const BUILDINGS := {
 const BUILD_CATEGORIES := [
 	{"id": "strasse", "name": "Straßen"},
 	{"id": "wohnen", "name": "Wohnen"},
+	{"id": "rohstoff", "name": "Rohstoffe"},
 	{"id": "wasser", "name": "Wasser"},
 	{"id": "essen", "name": "Essen"},
 	{"id": "wirtschaft", "name": "Wirtschaft"},

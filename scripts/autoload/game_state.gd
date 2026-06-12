@@ -31,6 +31,7 @@ signal research_completed_state(research_id: String)
 signal game_over(victory: bool, reason: String)
 signal speed_changed(new_speed: float)
 signal notification(text: String)     ## Kurze Meldung für den Spieler.
+signal citizens_changed               ## Bürgerliste / Berufe haben sich geändert.
 
 # ---------------------------------------------------------------------------
 # SPIELZUSTAND (alles, was gespeichert werden muss)
@@ -44,8 +45,12 @@ var day: int = 1
 var month: int = 1
 var year: int = 2040
 
-## Bevölkerung.
-var population: int = 20
+## Bevölkerung (= Anzahl lebender Bürger).
+var population: int = 30
+
+## Jeder Bürger: id, profession, work_cell, housing_cell, days_since_meal, hunger_days.
+var citizens: Array = []
+var _next_citizen_id: int = 1
 
 ## Gesundheitswerte: alle von 0 bis 100 (höher = besser), außer BMI.
 var protein: float = 80.0
@@ -95,7 +100,8 @@ var _occupancy_dirty: bool = true
 
 ## Tages-Bilanz für die UI (was wurde zuletzt produziert/verbraucht?).
 var daily_report := {
-	"wasser": 0.0, "essen": 0.0, "satoshis": 0.0, "technikpunkte": 0.0,
+	"wasser": 0.0, "essen": 0.0, "holz": 0.0, "steine": 0.0,
+	"satoshis": 0.0, "technikpunkte": 0.0,
 	"energie_bedarf": 0.0, "energie_leistung": 0.0,
 }
 
@@ -109,6 +115,10 @@ func _ready() -> void:
 	## gültige Startwerte und keinen Absturz.
 	if resources.is_empty():
 		resources = GameData.START_RESOURCES.duplicate(true)
+	else:
+		for key in GameData.START_RESOURCES:
+			if not resources.has(key):
+				resources[key] = GameData.START_RESOURCES[key]
 
 
 ## Startet ein komplett neues Spiel mit dem gewählten Charakter.
@@ -118,8 +128,8 @@ func new_game(chosen_character_id: String) -> void:
 	day = GameData.START_DATE["tag"]
 	month = GameData.START_DATE["monat"]
 	year = GameData.START_DATE["jahr"]
-	population = GameData.START_POPULATION
 	vegan_share = GameData.START_VEGAN_SHARE
+	_init_citizens(GameData.START_POPULATION)
 	protein = 80.0
 	b12 = 80.0
 	vitamin_d = 80.0
@@ -144,6 +154,7 @@ func new_game(chosen_character_id: String) -> void:
 	population_changed.emit()
 	health_changed.emit()
 	vegan_share_changed.emit(vegan_share)
+	citizens_changed.emit()
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +203,7 @@ func _advance_one_day() -> void:
 	_advance_calendar()
 	_advance_construction()
 	_simulate_economy()
+	_simulate_citizen_needs()
 	_simulate_health()
 	_simulate_vegan_share()
 	_simulate_population_growth()
@@ -207,8 +219,13 @@ func _advance_one_day() -> void:
 func _advance_construction() -> void:
 	for b in buildings:
 		if b.get("bau_tage_uebrig", 0) > 0:
+			if not has_builder_at_site(b["cell"]):
+				continue
 			b["bau_tage_uebrig"] -= 1
 			if b["bau_tage_uebrig"] <= 0:
+				release_workers_at_building(b["cell"])
+				if GameData.get_building(b["id"]).get("ist_farm", false):
+					assign_farmer_to_building(b["cell"])
 				building_completed.emit(b["cell"])
 				notification.emit("%s fertiggestellt!"
 						% GameData.get_building(b["id"])["name"])
@@ -246,7 +263,7 @@ func _simulate_economy() -> void:
 	daily_report["energie_leistung"] = energy_supply
 
 	# --- Produktion und Gebäude-Verbrauch ----------------------------------
-	var produced := {"wasser": 0.0, "essen": 0.0, "satoshis": 0.0, "technikpunkte": 0.0}
+	var produced := _fresh_resource_delta()
 	var production_mult: float = 1.0 + research_fx.get("produktions_mult", 0.0)
 
 	for b in buildings:
@@ -272,6 +289,10 @@ func _simulate_economy() -> void:
 
 	# --- Bilanz anwenden (Ressourcen können nicht unter 0 fallen) -----------
 	for res_name in produced:
+		if not resources.has(res_name):
+			resources[res_name] = 0.0
+		if not daily_report.has(res_name):
+			daily_report[res_name] = 0.0
 		daily_report[res_name] = produced[res_name]
 		resources[res_name] = maxf(0.0, resources[res_name] + produced[res_name])
 
@@ -388,8 +409,7 @@ func _simulate_population_growth() -> void:
 	## Wachstum: 2 % der Bevölkerung pro Tag (mindestens 1 Person),
 	## aber nie mehr als die freien Wohnungen.
 	var growth: int = clampi(int(ceil(population * 0.02)), 1, free_homes)
-	population += growth
-	population_changed.emit()
+	add_new_citizens(growth)
 
 
 # ---------------------------------------------------------------------------
@@ -459,13 +479,19 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		return false
 	var data := GameData.get_building(building_id)
 	resources["satoshis"] -= get_building_cost(building_id)
-	buildings.append({
+	var entry := {
 		"id": building_id,
 		"cell": cell,
 		"size": data["groesse"],
-		## Bauzeit: 1 Tag für Gebäude, Straßen sind sofort fertig.
 		"bau_tage_uebrig": 0 if building_id == "strasse" else 1,
-	})
+	}
+	if data.get("ist_farm", false):
+		var crops: Array = data.get("farm_kulturen", [])
+		entry["farm_crops"] = [crops[0]] if not crops.is_empty() else []
+		entry["farm_area"] = Vector2i(4, 4)
+	if building_id != "strasse" and entry["bau_tage_uebrig"] > 0:
+		assign_builder_to_construction(cell)
+	buildings.append(entry)
 	_occupancy_dirty = true
 	resources_changed.emit()
 	building_registered.emit(building_id)
@@ -489,8 +515,9 @@ func unregister_building(cell: Vector2i) -> void:
 	for i in range(buildings.size()):
 		if buildings[i]["cell"] == cell:
 			var data := GameData.get_building(buildings[i]["id"])
-			if data["baubar"]:  ## Das Rathaus gibt es nicht zurück.
+			if data["baubar"]:
 				resources["satoshis"] += data["kosten"] * GameData.DEMOLISH_REFUND
+			release_workers_at_building(cell)
 			buildings.remove_at(i)
 			_occupancy_dirty = true
 			resources_changed.emit()
@@ -646,6 +673,202 @@ func on_research_completed(research_id: String) -> void:
 
 
 # ---------------------------------------------------------------------------
+# BÜRGER UND BERUFE
+# ---------------------------------------------------------------------------
+
+func _fresh_resource_delta() -> Dictionary:
+	var delta := {}
+	for key in resources:
+		delta[key] = 0.0
+	for key in ["wasser", "essen", "holz", "steine", "satoshis", "technikpunkte"]:
+		if not delta.has(key):
+			delta[key] = 0.0
+	return delta
+
+
+func add_resource(res_name: String, amount: float) -> void:
+	if not resources.has(res_name):
+		resources[res_name] = 0.0
+	resources[res_name] += amount
+	resources_changed.emit()
+
+
+func _new_citizen_dict() -> Dictionary:
+	var c := {
+		"id": _next_citizen_id,
+		"profession": GameData.PROFESSION_VILLAGER,
+		"work_cell": Vector2i(-1, -1),
+		"housing_cell": Vector2i(-1, -1),
+		"days_since_meal": 0,
+		"hunger_days": 0,
+	}
+	_next_citizen_id += 1
+	return c
+
+
+func _init_citizens(count: int) -> void:
+	citizens.clear()
+	_next_citizen_id = 1
+	for _i in range(count):
+		citizens.append(_new_citizen_dict())
+	population = citizens.size()
+	citizens_changed.emit()
+
+
+func add_new_citizens(count: int) -> void:
+	for _i in range(count):
+		citizens.append(_new_citizen_dict())
+	population = citizens.size()
+	population_changed.emit()
+	citizens_changed.emit()
+
+
+func remove_citizen(citizen_id: int) -> void:
+	for i in range(citizens.size()):
+		if citizens[i]["id"] == citizen_id:
+			citizens.remove_at(i)
+			population = citizens.size()
+			population_changed.emit()
+			citizens_changed.emit()
+			return
+
+
+func get_citizen(citizen_id: int) -> Dictionary:
+	for c in citizens:
+		if c["id"] == citizen_id:
+			return c
+	return {}
+
+
+func get_idle_villagers() -> Array:
+	var result: Array = []
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_VILLAGER \
+				and c["work_cell"] == Vector2i(-1, -1):
+			result.append(c)
+	return result
+
+
+func train_builder() -> bool:
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_VILLAGER:
+			c["profession"] = GameData.PROFESSION_BUILDER
+			c["work_cell"] = Vector2i(-1, -1)
+			c["days_since_meal"] = 0
+			citizens_changed.emit()
+			notification.emit("Neuer Bauarbeiter ausgebildet!")
+			_assign_builder_to_nearest_site()
+			return true
+	notification.emit("Kein freier Bürger für die Ausbildung.")
+	return false
+
+
+func assign_farmer_to_building(cell: Vector2i) -> bool:
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_VILLAGER \
+				and c["work_cell"] == Vector2i(-1, -1):
+			c["profession"] = GameData.PROFESSION_FARMER
+			c["work_cell"] = cell
+			citizens_changed.emit()
+			return true
+	return false
+
+
+func assign_builder_to_construction(cell: Vector2i) -> bool:
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_BUILDER \
+				and c["work_cell"] == Vector2i(-1, -1):
+			c["work_cell"] = cell
+			citizens_changed.emit()
+			return true
+	return false
+
+
+func _assign_builder_to_nearest_site() -> void:
+	for b in buildings:
+		if b.get("bau_tage_uebrig", 0) > 0:
+			if assign_builder_to_construction(b["cell"]):
+				return
+
+
+func release_workers_at_building(cell: Vector2i) -> void:
+	for c in citizens:
+		if c["work_cell"] == cell:
+			if c["profession"] == GameData.PROFESSION_FARMER \
+					or c["profession"] == GameData.PROFESSION_BUILDER:
+				c["profession"] = GameData.PROFESSION_VILLAGER
+			c["work_cell"] = Vector2i(-1, -1)
+	citizens_changed.emit()
+
+
+func has_builder_at_site(cell: Vector2i) -> bool:
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_BUILDER and c["work_cell"] == cell:
+			return true
+	return false
+
+
+func feed_builder(citizen_id: int) -> void:
+	var c := get_citizen(citizen_id)
+	if c.is_empty():
+		return
+	c["days_since_meal"] = 0
+	citizens_changed.emit()
+
+
+func assign_housing(citizen_id: int, housing_cell: Vector2i) -> void:
+	var c := get_citizen(citizen_id)
+	if c.is_empty():
+		return
+	c["housing_cell"] = housing_cell
+	c["hunger_days"] = 0
+	citizens_changed.emit()
+
+
+func get_building_at_cell(cell: Vector2i) -> Dictionary:
+	for b in buildings:
+		var size: Vector2i = b["size"]
+		for x in range(size.x):
+			for y in range(size.y):
+				if b["cell"] + Vector2i(x, y) == cell:
+					return b
+	return {}
+
+
+func set_farm_crop(cell: Vector2i, crop_id: String) -> void:
+	for b in buildings:
+		if b["cell"] == cell:
+			var allowed: Array = GameData.get_building(b["id"]).get("farm_kulturen", [])
+			if crop_id in allowed:
+				b["farm_crops"] = [crop_id]
+				notification.emit("Anbau: %s" % crop_id)
+			return
+
+
+func _simulate_citizen_needs() -> void:
+	var to_remove: Array[int] = []
+	for c in citizens:
+		if c["profession"] == GameData.PROFESSION_BUILDER:
+			c["days_since_meal"] += 1
+			if c["days_since_meal"] > GameData.BUILDER_STARVE_DAYS:
+				to_remove.append(c["id"])
+				notification.emit("Ein Bauarbeiter ist verhungert!")
+		elif c["housing_cell"] != Vector2i(-1, -1):
+			c["hunger_days"] = 0
+			c["days_since_meal"] = 0
+		else:
+			if resources.get("essen", 0.0) <= 0.0:
+				c["hunger_days"] += 1
+				if c["hunger_days"] > 14:
+					to_remove.append(c["id"])
+					notification.emit("Ein obdachloser Bürger ist verhungert!")
+			else:
+				c["hunger_days"] = 0
+	for cid in to_remove:
+		remove_citizen(cid)
+
+
+# ---------------------------------------------------------------------------
 # SPEICHERN / LADEN - Daten rein und raus
 # ---------------------------------------------------------------------------
 
@@ -653,18 +876,38 @@ func on_research_completed(research_id: String) -> void:
 func to_save_dict() -> Dictionary:
 	var building_list: Array = []
 	for b in buildings:
-		building_list.append({
+		var saved := {
 			"id": b["id"],
-			## Vector2i lässt sich nicht direkt als JSON speichern,
-			## deshalb zerlegen wir ihn in x und y.
 			"cell_x": b["cell"].x,
 			"cell_y": b["cell"].y,
 			"bau_tage_uebrig": b.get("bau_tage_uebrig", 0),
+		}
+		if b.has("farm_crops"):
+			saved["farm_crops"] = b["farm_crops"]
+		if b.has("farm_area"):
+			saved["farm_area_x"] = b["farm_area"].x
+			saved["farm_area_y"] = b["farm_area"].y
+		building_list.append(saved)
+
+	var citizen_list: Array = []
+	for c in citizens:
+		citizen_list.append({
+			"id": c["id"],
+			"profession": c["profession"],
+			"work_x": c["work_cell"].x,
+			"work_y": c["work_cell"].y,
+			"housing_x": c["housing_cell"].x,
+			"housing_y": c["housing_cell"].y,
+			"days_since_meal": c.get("days_since_meal", 0),
+			"hunger_days": c.get("hunger_days", 0),
 		})
+
 	return {
 		"resources": resources.duplicate(true),
 		"day": day, "month": month, "year": year,
 		"population": population,
+		"citizens": citizen_list,
+		"next_citizen_id": _next_citizen_id,
 		"protein": protein, "b12": b12, "vitamin_d": vitamin_d,
 		"mental": mental, "bmi": bmi,
 		"vegan_share": vegan_share,
@@ -700,12 +943,34 @@ func from_save_dict(data: Dictionary) -> void:
 	buildings = []
 	for b in data["buildings"]:
 		var building_data := GameData.get_building(b["id"])
-		buildings.append({
+		var entry := {
 			"id": b["id"],
 			"cell": Vector2i(int(b["cell_x"]), int(b["cell_y"])),
 			"size": building_data["groesse"],
 			"bau_tage_uebrig": int(b.get("bau_tage_uebrig", 0)),
-		})
+		}
+		if b.has("farm_crops"):
+			entry["farm_crops"] = b["farm_crops"]
+		if b.has("farm_area_x"):
+			entry["farm_area"] = Vector2i(int(b["farm_area_x"]), int(b["farm_area_y"]))
+		buildings.append(entry)
+
+	citizens = []
+	_next_citizen_id = int(data.get("next_citizen_id", 1))
+	if data.has("citizens"):
+		for c in data["citizens"]:
+			citizens.append({
+				"id": int(c["id"]),
+				"profession": c["profession"],
+				"work_cell": Vector2i(int(c["work_x"]), int(c["work_y"])),
+				"housing_cell": Vector2i(int(c["housing_x"]), int(c["housing_y"])),
+				"days_since_meal": int(c.get("days_since_meal", 0)),
+				"hunger_days": int(c.get("hunger_days", 0)),
+			})
+	else:
+		_init_citizens(population)
+	population = citizens.size()
+
 	is_game_over = false
 	game_speed = 1.0
 	_day_timer = 0.0
@@ -715,3 +980,4 @@ func from_save_dict(data: Dictionary) -> void:
 	population_changed.emit()
 	health_changed.emit()
 	vegan_share_changed.emit(vegan_share)
+	citizens_changed.emit()

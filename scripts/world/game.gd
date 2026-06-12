@@ -30,7 +30,7 @@ func _ready() -> void:
 		grid.rebuild_from_state()
 
 	## Kamera auf die Kartenmitte (Rathaus) setzen.
-	camera.position = grid.cell_to_world(grid.get_center_cell())
+	camera.position = grid.cell_to_world_center(grid.get_center_cell())
 	## Simulation läuft ab jetzt.
 	GameState.set_speed(1.0)
 

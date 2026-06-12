@@ -55,7 +55,7 @@ func check(condition: bool, description: String) -> void:
 func _test_new_game() -> void:
 	print("[Test] Neues Spiel")
 	GameState.new_game("vegan_gains")
-	check(GameState.population == 20, "Start mit 20 Bürgern")
+	check(GameState.population == 30, "Start mit 30 Bürgern")
 	check(GameState.vegan_share == 100.0, "Start mit 100 % veganem Anteil")
 	check(GameState.year == 2040 and GameState.month == 1 and GameState.day == 1,
 			"Start am 1. Januar 2040")
@@ -75,6 +75,7 @@ func _test_building_and_economy() -> void:
 
 	var money_before: float = GameState.resources["satoshis"]
 	check(GameState.can_build("wohnmodul"), "Wohnmodul ist bezahlbar")
+	check(GameState.train_builder(), "Bauarbeiter für Baustelle ausgebildet")
 	check(GameState.register_building("wohnmodul", Vector2i(5, 5)),
 			"Wohnmodul kann registriert werden")
 	check(GameState.resources["satoshis"] == money_before - 150,
@@ -196,6 +197,7 @@ func _test_construction() -> void:
 			"Straßen haben keine Bauzeit")
 
 	## Gebäude brauchen 1 Tag und produzieren solange nichts.
+	check(GameState.train_builder(), "Bauarbeiter für Garten-Baustelle")
 	GameState.register_building("gemeinschaftsgarten", Vector2i(4, 4))
 	check(GameState.buildings[-1]["bau_tage_uebrig"] == 1,
 			"Gebäude starten mit 1 Tag Bauzeit")
@@ -307,14 +309,14 @@ func _test_save_load() -> void:
 	ResearchManager.do_research("solarenergie")
 	## Eine laufende (mehrtägige) Forschung muss mitgespeichert werden.
 	ResearchManager.do_research("stromnetze")  ## 100 TP -> 4 Tage
-	GameState.population = 77
+	GameState.add_new_citizens(47)
 	GameState.vegan_share = 88.5
 
 	check(SaveManager.save_game(), "Speichern erfolgreich")
 
 	## Spielstand absichtlich "kaputt machen".
 	GameState.new_game("vegan_gains")
-	check(GameState.population == 20, "Neues Spiel hat den Zustand überschrieben")
+	check(GameState.population == 30, "Neues Spiel hat den Zustand überschrieben")
 
 	check(SaveManager.load_game(), "Laden erfolgreich")
 	check(GameState.resources["satoshis"] == 4242.0, "Satoshis wiederhergestellt")
@@ -362,15 +364,14 @@ func _test_grid_rules() -> void:
 	check(not grid.is_placement_valid("wohnmodul", center + Vector2i(7, 7)),
 			"Wohnmodul ohne Straßenanschluss verboten")
 
-	## Iso-Mathematik: Hin- und Rückrechnung müssen zusammenpassen.
+	## Raster-Mathematik: Hin- und Rückrechnung müssen zusammenpassen.
 	var all_match := true
 	for cell in [Vector2i(0, 0), Vector2i(3, 7), Vector2i(12, 4)]:
-		var world: Vector2 = grid.cell_to_world(cell)
-		## Mittelpunkt der Raute prüfen (Ecke wäre mehrdeutig).
-		var back: Vector2i = grid.world_to_cell(world + Vector2(0, 16))
+		var world: Vector2 = grid.cell_to_world_center(cell)
+		var back: Vector2i = grid.world_to_cell(world)
 		if back != cell:
 			all_match = false
-	check(all_match, "Iso-Umrechnung Zelle -> Welt -> Zelle stimmt")
+	check(all_match, "Orthogonale Umrechnung Zelle -> Welt -> Zelle stimmt")
 
 	grid.queue_free()
 

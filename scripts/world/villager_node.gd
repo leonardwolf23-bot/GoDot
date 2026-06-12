@@ -1,31 +1,30 @@
 class_name VillagerNode
 extends Node2D
-## Ein Dorfbewohner, der über Straßen läuft und Lieferungen transportiert.
+## Sichtbarer Bürger – läuft orthogonal über die Karte.
 
 const VILLAGER_ROOT := "res://assets/test/villager/"
 const WALK_FPS := 10.0
-const MOVE_SPEED := 52.0
+const MOVE_SPEED := 64.0
 
-## Iso-Rasterbewegung -> 8 PixelLab-Richtungen.
 const GRID_DELTA_TO_DIR := {
-	Vector2i(1, 0): "south-east",
-	Vector2i(-1, 0): "north-west",
-	Vector2i(0, 1): "south-west",
-	Vector2i(0, -1): "north-east",
+	Vector2i(1, 0): "east",
+	Vector2i(-1, 0): "west",
+	Vector2i(0, 1): "south",
+	Vector2i(0, -1): "north",
 }
 
-signal delivery_finished(job: Dictionary)
+signal arrived
 
+var citizen_id: int = -1
 var _grid: CityGrid = null
 var _sprite: AnimatedSprite2D = null
-var _cargo_icon: Sprite2D = null
+var _badge: Sprite2D = null
 var _path: Array[Vector2i] = []
 var _path_index: int = 0
-var _pickup_index: int = -1
 var _target_world: Vector2 = Vector2.ZERO
 var _current_dir: String = "south"
-var _is_busy: bool = false
-var _active_job: Dictionary = {}
+var _is_moving: bool = false
+var _profession: String = GameData.PROFESSION_VILLAGER
 
 static var _shared_sprite_frames: SpriteFrames = null
 
@@ -38,86 +37,96 @@ func _ready() -> void:
 	add_child(_sprite)
 	_play_idle()
 
-	_cargo_icon = Sprite2D.new()
-	_cargo_icon.visible = false
-	_cargo_icon.position = Vector2(0, -28)
-	_cargo_icon.scale = Vector2(0.12, 0.12)
-	var food_tex := _load_texture_safe("res://assets/icons/essen.png")
-	if food_tex != null:
-		_cargo_icon.texture = food_tex
-	add_child(_cargo_icon)
+	_badge = Sprite2D.new()
+	_badge.position = Vector2(0, -34)
+	_badge.scale = Vector2(0.1, 0.1)
+	_badge.visible = false
+	add_child(_badge)
 
 
-func setup(grid: CityGrid) -> void:
+func setup(grid: CityGrid, p_citizen_id: int) -> void:
 	_grid = grid
+	citizen_id = p_citizen_id
 
 
-func is_available() -> bool:
-	return not _is_busy
+func set_profession(profession: String) -> void:
+	_profession = profession
+	_update_badge()
 
 
-func start_delivery(job: Dictionary, path: Array[Vector2i],
-		pickup_cell: Vector2i = Vector2i(-1, -1)) -> void:
+func _update_badge() -> void:
+	match _profession:
+		GameData.PROFESSION_BUILDER:
+			_badge.texture = _load_texture_safe("res://assets/buildings/baustelle.png")
+			_badge.visible = _badge.texture != null
+		GameData.PROFESSION_FARMER:
+			_badge.texture = _load_texture_safe("res://assets/icons/essen.png")
+			_badge.visible = _badge.texture != null
+		_:
+			_badge.visible = false
+
+
+func is_moving() -> bool:
+	return _is_moving
+
+
+func walk_path(path: Array[Vector2i]) -> void:
 	if path.is_empty() or _grid == null:
-		delivery_finished.emit(job)
+		arrived.emit()
 		return
-
-	_active_job = job
 	_path = path
 	_path_index = 0
-	_pickup_index = -1
-	for i in path.size():
-		if path[i] == pickup_cell:
-			_pickup_index = i
-			break
-
-	_is_busy = true
-	_path_index = 0
+	_is_moving = true
 	for i in _path.size():
 		if _path[i] == _grid.world_to_cell(position):
 			_path_index = i
 			break
-	_cargo_icon.visible = _pickup_index >= 0 and _path_index >= _pickup_index
-
 	if _path_index >= _path.size() - 1:
-		_finish_delivery()
+		_stop_moving()
+		arrived.emit()
 		return
-
 	_path_index += 1
-	_target_world = _grid.cell_to_world(_path[_path_index])
+	_target_world = _grid.cell_to_world_center(_path[_path_index])
 	_set_walk_direction(_path[_path_index] - _path[_path_index - 1])
 	_play_walk()
-	_update_depth()
+
+
+func walk_to_cell(cell: Vector2i) -> void:
+	var start := _grid.world_to_cell(position)
+	var path := _grid.find_path_walkable(start, cell)
+	if path.is_empty() and start != cell:
+		position = _grid.cell_to_world_center(cell)
+		_stop_moving()
+		arrived.emit()
+		return
+	if path.is_empty():
+		path = [start, cell]
+	walk_path(path)
 
 
 func _process(delta: float) -> void:
-	if not _is_busy or _path.is_empty():
+	if not _is_moving or _path.is_empty():
 		return
 
 	var to_target := _target_world - position
-	if to_target.length() < 3.0:
+	if to_target.length() < 4.0:
 		if _path_index >= _path.size() - 1:
-			_finish_delivery()
+			_stop_moving()
+			arrived.emit()
 			return
-		if _pickup_index == _path_index:
-			_cargo_icon.visible = true
 		_path_index += 1
-		_target_world = _grid.cell_to_world(_path[_path_index])
+		_target_world = _grid.cell_to_world_center(_path[_path_index])
 		_set_walk_direction(_path[_path_index] - _path[_path_index - 1])
 		return
 
 	position += to_target.normalized() * MOVE_SPEED * delta
-	_update_depth()
+	z_index = int(position.y) + 50
 
 
-func _finish_delivery() -> void:
-	_is_busy = false
-	_cargo_icon.visible = false
+func _stop_moving() -> void:
+	_is_moving = false
 	_path.clear()
 	_play_idle()
-	var finished_job := _active_job
-	_active_job = {}
-	delivery_finished.emit(finished_job)
 
 
 func _set_walk_direction(grid_delta: Vector2i) -> void:
@@ -129,21 +138,17 @@ func _set_walk_direction(grid_delta: Vector2i) -> void:
 
 
 func _play_walk() -> void:
-	var anim_name := "walking_%s" % _current_dir.replace("-", "_")
+	var anim_name: String = "walking_%s" % _current_dir.replace("-", "_")
 	if _sprite.sprite_frames.has_animation(anim_name):
 		_sprite.play(anim_name)
 
 
 func _play_idle() -> void:
 	_sprite.stop()
-	var anim_name := "idle_%s" % _current_dir.replace("-", "_")
+	var anim_name: String = "idle_%s" % _current_dir.replace("-", "_")
 	if _sprite.sprite_frames.has_animation(anim_name):
 		_sprite.animation = anim_name
 		_sprite.frame = 0
-
-
-func _update_depth() -> void:
-	z_index = int(position.y) + 40
 
 
 static func _get_sprite_frames() -> SpriteFrames:
@@ -157,7 +162,6 @@ static func _get_sprite_frames() -> SpriteFrames:
 	]
 	for dir in directions:
 		var dir_key: String = dir.replace("-", "_")
-
 		var walk_anim: String = "walking_%s" % dir_key
 		frames.add_animation(walk_anim)
 		frames.set_animation_speed(walk_anim, WALK_FPS)
@@ -173,7 +177,7 @@ static func _get_sprite_frames() -> SpriteFrames:
 		frames.add_animation(idle_anim)
 		frames.set_animation_speed(idle_anim, 1.0)
 		frames.set_animation_loop(idle_anim, true)
-		var idle_tex := _load_texture_safe("%sVillager/rotations/%s.png"
+		var idle_tex: Texture2D = _load_texture_safe("%sVillager/rotations/%s.png"
 				% [VILLAGER_ROOT, dir])
 		if idle_tex != null:
 			frames.add_frame(idle_anim, idle_tex)
