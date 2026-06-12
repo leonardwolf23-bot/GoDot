@@ -65,9 +65,9 @@ func _draw() -> void:
 	draw_rect(footprint, base_color, false, 2.0)
 
 	var label: String = data.get("name", building_id)
-	if not is_ghost and size.x * size.y >= 2:
-		draw_string(ThemeDB.fallback_font, Vector2(6, 18), label,
-				HORIZONTAL_ALIGNMENT_LEFT, int(footprint.size.x) - 8, 11, Color.WHITE)
+	if not is_ghost and building_id != "strasse":
+		draw_string(ThemeDB.fallback_font, Vector2(8, 22), label,
+				HORIZONTAL_ALIGNMENT_LEFT, int(footprint.size.x) - 12, 12, Color.WHITE)
 
 
 static var _shared_textures := {}

@@ -393,10 +393,11 @@ func _on_building_completed(cell: Vector2i) -> void:
 func place_starting_buildings() -> void:
 	generate_terrain()
 	var center := get_center_cell()
+	var rathaus_size: Vector2i = GameData.get_building("rathaus")["groesse"]
 	GameState.register_starting_building("rathaus", center)
 	_spawn_building_visual("rathaus", center)
-	for x in range(-1, 3):
-		var road_cell := center + Vector2i(x, 2)
+	for x in range(-1, rathaus_size.x + 1):
+		var road_cell := center + Vector2i(x, rathaus_size.y)
 		GameState.register_starting_building("strasse", road_cell)
 		_spawn_building_visual("strasse", road_cell)
 
