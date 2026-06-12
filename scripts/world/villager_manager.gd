@@ -6,36 +6,65 @@ var _grid: CityGrid = null
 var _nodes: Dictionary = {}
 var _pending_arrivals: Array[int] = []
 var _carrying: Dictionary = {}  # citizen_id -> true
+var _syncing_citizens: bool = false
+var _sync_again: bool = false
+var _jobs_pending: bool = false
 
 
 func setup(grid: CityGrid) -> void:
 	_grid = grid
-	GameState.citizens_changed.connect(_sync_citizens)
-	GameState.population_changed.connect(_on_population_changed)
-	GameState.building_registered.connect(_on_building_registered)
-	GameState.day_passed.connect(_on_day_passed)
-	GameState.delivery_queue_changed.connect(_try_assign_deliveries)
+	if not GameState.citizens_changed.is_connected(_sync_citizens):
+		GameState.citizens_changed.connect(_sync_citizens)
+	if not GameState.population_changed.is_connected(_on_population_changed):
+		GameState.population_changed.connect(_on_population_changed)
+	if not GameState.building_registered.is_connected(_on_building_registered):
+		GameState.building_registered.connect(_on_building_registered)
+	if not GameState.day_passed.is_connected(_on_day_passed):
+		GameState.day_passed.connect(_on_day_passed)
+	if not GameState.delivery_queue_changed.is_connected(_try_assign_deliveries):
+		GameState.delivery_queue_changed.connect(_try_assign_deliveries)
 	call_deferred("_sync_citizens")
 	call_deferred("_try_assign_deliveries")
 
 
 func _sync_citizens() -> void:
-	var alive_ids: Dictionary = {}
-	for c in GameState.citizens:
-		alive_ids[c["id"]] = true
-		if not _nodes.has(c["id"]):
-			_spawn_node_for_citizen(c)
-		else:
-			_nodes[c["id"]].set_profession(c["profession"])
+	if _syncing_citizens:
+		_sync_again = true
+		return
+	_syncing_citizens = true
+	while true:
+		_sync_again = false
+		var alive_ids: Dictionary = {}
+		for c in GameState.citizens:
+			alive_ids[c["id"]] = true
+			if not _nodes.has(c["id"]):
+				_spawn_node_for_citizen(c)
+			else:
+				_nodes[c["id"]].set_profession(c["profession"])
 
-	for cid in _nodes.keys():
-		if not alive_ids.has(cid):
-			var old: VillagerNode = _nodes[cid]
-			if is_instance_valid(old):
-				old.queue_free()
-			_nodes.erase(cid)
-			_carrying.erase(cid)
+		for cid in _nodes.keys():
+			if not alive_ids.has(cid):
+				var old: VillagerNode = _nodes[cid]
+				if is_instance_valid(old):
+					old.queue_free()
+				_nodes.erase(cid)
+				_carrying.erase(cid)
 
+		if not _sync_again:
+			break
+	_syncing_citizens = false
+	_queue_update_jobs()
+
+
+func _queue_update_jobs() -> void:
+	if _jobs_pending:
+		return
+	_jobs_pending = true
+	call_deferred("_run_update_jobs")
+
+
+func _run_update_jobs() -> void:
+	_jobs_pending = false
 	_update_all_jobs()
 
 
@@ -99,11 +128,11 @@ func _find_free_housing_cell() -> Vector2i:
 func _on_building_registered(building_id: String) -> void:
 	if building_id == "strasse":
 		return
-	call_deferred("_update_all_jobs")
+	_queue_update_jobs()
 
 
 func _on_day_passed() -> void:
-	_update_all_jobs()
+	_queue_update_jobs()
 	_try_assign_deliveries()
 
 
@@ -167,7 +196,7 @@ func _access_cell(building_cell: Vector2i) -> Vector2i:
 	var b := GameState.get_building_at_cell(building_cell)
 	if not b.is_empty():
 		var size: Vector2i = b["size"]
-		return building_cell + Vector2i(0, size.y)
+		return building_cell + Vector2i(maxi(size.x / 2, 0), size.y)
 	return building_cell
 
 
@@ -200,21 +229,20 @@ func _update_builder(c: Dictionary, node: VillagerNode) -> void:
 		var food_cell := _find_food_building_cell()
 		if food_cell != Vector2i(-1, -1):
 			node.walk_to_cell(food_cell)
-			return
+		return
 
-	if c["work_cell"] != Vector2i(-1, -1):
-		var site: Vector2i = c["work_cell"]
-		var b := GameState.get_building_at_cell(site)
-		if not b.is_empty() and b.get("bau_tage_uebrig", 0) > 0:
-			node.position = _grid.cell_to_world_center(site + Vector2i(0, 1))
-			return
+	var site: Vector2i = c["work_cell"]
+	if site == Vector2i(-1, -1):
+		return
 
-	c["work_cell"] = Vector2i(-1, -1)
-	for b in GameState.buildings:
-		if b.get("bau_tage_uebrig", 0) > 0:
-			if GameState.assign_builder_to_construction(b["cell"]):
-				node.walk_to_cell(b["cell"] + Vector2i(0, 1))
-				return
+	var b := GameState.get_building_at_cell(site)
+	if b.is_empty() or b.get("bau_tage_uebrig", 0) <= 0:
+		return
+
+	var access := _access_cell(site)
+	if _grid.world_to_cell(node.position) == access:
+		return
+	node.walk_to_cell(access)
 
 
 func _update_farmer(c: Dictionary, node: VillagerNode) -> void:
@@ -224,8 +252,7 @@ func _update_farmer(c: Dictionary, node: VillagerNode) -> void:
 	var b := GameState.get_building_at_cell(farm)
 	if b.is_empty():
 		return
-	var data: Dictionary = GameData.get_building(b.get("id", ""))
-	node.position = _grid.cell_to_world_center(farm + Vector2i(0, data["groesse"].y))
+	node.position = _grid.cell_to_world_center(_access_cell(farm))
 
 
 func _update_villager(_c: Dictionary, node: VillagerNode) -> void:
@@ -237,10 +264,10 @@ func _find_food_building_cell() -> Vector2i:
 		if b.get("bau_tage_uebrig", 0) > 0:
 			continue
 		if b["id"] in ["food_court", "rathaus", "vegan_muehle", "tofu_huette"]:
-			return b["cell"] + Vector2i(0, 1)
+			return _access_cell(b["cell"])
 		var data: Dictionary = GameData.get_building(b["id"])
 		if data.get("verbrauch", {}).get("essen", 0.0) > 0.0:
-			return b["cell"] + Vector2i(0, 1)
+			return _access_cell(b["cell"])
 	return Vector2i(-1, -1)
 
 

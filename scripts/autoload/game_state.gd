@@ -514,9 +514,9 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 		entry["pending_delivery"] = {}
 	if data.get("ist_lager", false):
 		entry["storage"] = {}
+	buildings.append(entry)
 	if building_id != "strasse" and entry["bau_tage_uebrig"] > 0:
 		assign_builder_to_construction(cell)
-	buildings.append(entry)
 	_occupancy_dirty = true
 	resources_changed.emit()
 	building_registered.emit(building_id)
@@ -780,9 +780,9 @@ func train_builder() -> bool:
 			c["profession"] = GameData.PROFESSION_BUILDER
 			c["work_cell"] = Vector2i(-1, -1)
 			c["days_since_meal"] = 0
+			_assign_idle_builders()
 			citizens_changed.emit()
 			notification.emit("Neuer Bauarbeiter ausgebildet!")
-			_assign_builder_to_nearest_site()
 			return true
 	notification.emit("Kein freier Bürger für die Ausbildung.")
 	return false
@@ -804,16 +804,15 @@ func assign_builder_to_construction(cell: Vector2i) -> bool:
 		if c["profession"] == GameData.PROFESSION_BUILDER \
 				and c["work_cell"] == Vector2i(-1, -1):
 			c["work_cell"] = cell
-			citizens_changed.emit()
 			return true
 	return false
 
 
-func _assign_builder_to_nearest_site() -> void:
+func _assign_idle_builders() -> void:
 	for b in buildings:
 		if b.get("bau_tage_uebrig", 0) > 0:
-			if assign_builder_to_construction(b["cell"]):
-				return
+			if not has_builder_at_site(b["cell"]):
+				assign_builder_to_construction(b["cell"])
 
 
 func release_workers_at_building(cell: Vector2i) -> void:
