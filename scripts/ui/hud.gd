@@ -5,7 +5,8 @@ extends Control
 ## Die Haupt-Benutzeroberfläche im Spiel. Sie wird komplett per Code
 ## aufgebaut (kein Gefummel im Editor nötig) und besteht aus:
 ##
-##   - Linke Leiste: Ressourcen, Bevölkerung, veganer Anteil, Energie, Datum
+##   - Links: Gesundheits-HUD (Vegan, Gesundheit, Protein, Fette, Carbs …)
+##   - Daneben: Ressourcen, Bevölkerung, veganer Anteil, Energie, Datum
 ##   - Rechte Leiste: Buttons für Forschung, Gesundheit, Deutschland,
 ##     Speichern und Hauptmenü
 ##   - Unten: grafisches HUD (Research / Build / Main Menu)
@@ -22,6 +23,8 @@ var _labels := {}
 var _speed_buttons: Array[Button] = []
 
 ## Panels.
+var _left_health_hud: LeftHealthHud
+var _resources_panel: PanelContainer
 var _bottom_hud: BottomHudBar
 var _build_menu: BuildMenu
 var _research_panel: ResearchPanel
@@ -62,6 +65,7 @@ func _ready() -> void:
 	## nur seine sichtbaren Kinder (Buttons, Panels) tun das.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+	_create_left_health_hud()
 	_create_top_bar()
 	_create_speed_controls()
 	_create_side_buttons()
@@ -94,11 +98,18 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------------------
-# LINKE RESSOURCEN-LEISTE
+# LINKES GESUNDHEITS-HUD + RESSOURCEN-LEISTE
 # ---------------------------------------------------------------------------
+
+func _create_left_health_hud() -> void:
+	_left_health_hud = LeftHealthHud.new()
+	add_child(_left_health_hud)
+	get_viewport().size_changed.connect(func(): call_deferred("_update_resources_panel_position"))
+
 
 func _create_top_bar() -> void:
 	var panel := PanelContainer.new()
+	_resources_panel = panel
 	panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
 	panel.offset_left = 0.0
 	panel.offset_top = 0.0
@@ -152,6 +163,18 @@ func _create_top_bar() -> void:
 		label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		row.add_child(label)
 		_labels[entry[0]] = label
+
+	call_deferred("_update_resources_panel_position")
+
+
+func _update_resources_panel_position() -> void:
+	if _resources_panel == null:
+		return
+	var left_offset: float = 0.0
+	if _left_health_hud != null:
+		left_offset = _left_health_hud.get_panel_width()
+	_resources_panel.offset_left = left_offset
+	_resources_panel.offset_right = left_offset + 210.0
 
 
 ## Geschwindigkeits-Buttons: Pause, 1x, 2x, 3x.
@@ -486,6 +509,7 @@ func _load_icon(icon_name: String) -> Texture2D:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		call_deferred("_update_speed_controls_position")
+		call_deferred("_update_resources_panel_position")
 
 
 func _process(delta: float) -> void:
