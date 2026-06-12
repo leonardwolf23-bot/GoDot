@@ -359,14 +359,18 @@ func _make_building_info_text(building_id: String, cell: Vector2i) -> String:
 	var bonus: float = GameState.get_district_bonus_at(cell)
 	var mult := 1.0 + bonus
 
-	var res_names := {
-		"wasser": "Wasser", "essen": "Essen",
-		"satoshis": "Satoshis", "technikpunkte": "Technikpunkte",
-	}
 	for res_name in data["produktion"]:
-		lines.append("+%.1f %s/Tag" % [data["produktion"][res_name] * mult, res_names[res_name]])
+		lines.append("+%.1f %s/Tag" % [
+			data["produktion"][res_name] * mult,
+			GameData.get_resource_label(str(res_name))])
+	for res_name in data.get("verarbeitung", {}):
+		lines.append("-%.1f %s/Tag (Rohstoff)" % [
+			data["verarbeitung"][res_name] * mult,
+			GameData.get_resource_label(str(res_name))])
 	for res_name in data["verbrauch"]:
-		lines.append("-%.1f %s/Tag" % [data["verbrauch"][res_name], res_names[res_name]])
+		lines.append("-%.1f %s/Tag" % [
+			data["verbrauch"][res_name],
+			GameData.get_resource_label(str(res_name))])
 	if data["wohnraum"] > 0:
 		lines.append("Wohnraum: %d Bürger" % data["wohnraum"])
 	if data["energie_bedarf"] > 0:

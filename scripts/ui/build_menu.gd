@@ -125,9 +125,17 @@ func _make_tooltip(building_id: String) -> String:
 	if data["wohnraum"] > 0:
 		lines.append("Wohnraum: %d Bürger" % data["wohnraum"])
 	for res_name in data["produktion"]:
-		lines.append("+%.0f %s/Tag" % [data["produktion"][res_name], res_name.capitalize()])
+		lines.append("+%.0f %s/Tag" % [
+			data["produktion"][res_name],
+			GameData.get_resource_label(str(res_name))])
+	for res_name in data.get("verarbeitung", {}):
+		lines.append("-%.0f %s/Tag (Rohstoff)" % [
+			data["verarbeitung"][res_name],
+			GameData.get_resource_label(str(res_name))])
 	for res_name in data["verbrauch"]:
-		lines.append("-%.0f %s/Tag" % [data["verbrauch"][res_name], res_name.capitalize()])
+		lines.append("-%.0f %s/Tag" % [
+			data["verbrauch"][res_name],
+			GameData.get_resource_label(str(res_name))])
 	if data["energie_bedarf"] > 0:
 		lines.append("Strombedarf: %d" % data["energie_bedarf"])
 	if data["energie_leistung"] > 0:

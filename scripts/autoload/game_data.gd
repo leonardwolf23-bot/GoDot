@@ -79,6 +79,8 @@ const START_RESOURCES := {
 	"erbsen": 0.0,
 	"mais": 0.0,
 	"weizen": 0.0,
+	"eisbergsalat": 0.0,
+	"apfel": 0.0,
 }
 const START_POPULATION: int = 30
 const START_VEGAN_SHARE: float = 100.0
@@ -150,6 +152,9 @@ static func get_resource_label(res_id: String) -> String:
 		"wasser": "Wasser", "essen": "Essen", "holz": "Holz", "steine": "Steine",
 		"satoshis": "Satoshis", "technikpunkte": "Technik",
 		"brot": "Brot", "tofu": "Tofu", "sojamilch": "Sojamilch",
+		"hafermilch": "Hafermilch", "vaese": "Vegankäse",
+		"proteinriegel": "Proteinriegel", "hefeflocken": "Hefeflocken",
+		"seitanwuerste": "Seitanwürste",
 	}
 	if labels.has(res_id):
 		return labels[res_id]

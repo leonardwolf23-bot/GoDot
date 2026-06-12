@@ -122,12 +122,16 @@ func _ready() -> void:
 	if resources.is_empty():
 		resources = GameData.START_RESOURCES.duplicate(true)
 	else:
-		for key in GameData.START_RESOURCES:
-			if not resources.has(key):
-				resources[key] = GameData.START_RESOURCES[key]
+		_ensure_resource_keys()
 
 
 ## Startet ein komplett neues Spiel mit dem gewählten Charakter.
+func _ensure_resource_keys() -> void:
+	for key in GameData.START_RESOURCES:
+		if not resources.has(key):
+			resources[key] = GameData.START_RESOURCES[key]
+
+
 func new_game(chosen_character_id: String) -> void:
 	character_id = chosen_character_id
 	resources = GameData.START_RESOURCES.duplicate(true)
@@ -306,7 +310,7 @@ func _simulate_economy() -> void:
 		if not daily_report.has(res_name):
 			daily_report[res_name] = 0.0
 		daily_report[res_name] = produced[res_name]
-		resources[res_name] = maxf(0.0, resources[res_name] + produced[res_name])
+		resources[res_name] = maxf(0.0, resources.get(res_name, 0.0) + produced[res_name])
 
 	_schedule_warehouse_deliveries()
 
@@ -1268,6 +1272,7 @@ func to_save_dict() -> Dictionary:
 ## Stellt den Spielstand aus einem Dictionary wieder her.
 func from_save_dict(data: Dictionary) -> void:
 	resources = data["resources"].duplicate(true)
+	_ensure_resource_keys()
 	day = int(data["day"])
 	month = int(data["month"])
 	year = int(data["year"])
