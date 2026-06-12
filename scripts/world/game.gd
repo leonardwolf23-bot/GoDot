@@ -7,6 +7,7 @@ extends Node2D
 ## Außerdem wird die Kamera auf das Rathaus zentriert.
 
 @onready var grid: CityGrid = $CityGrid
+@onready var villagers: VillagerManager = $VillagerManager
 @onready var camera: Camera2D = $Camera
 @onready var hud: HUD = $UI/HUD
 
@@ -19,6 +20,7 @@ func _ready() -> void:
 	## Dem HUD sagen, mit welchem Grid es zusammenarbeitet
 	## (das Baumenü muss dem Grid Bau-Befehle geben können).
 	hud.setup(grid)
+	villagers.setup(grid)
 
 	if GameState.buildings.is_empty():
 		## Frisches Spiel: Startgebäude platzieren.

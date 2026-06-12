@@ -511,3 +511,83 @@ func rebuild_from_state() -> void:
 		## Noch nicht fertige Gebäude als Baustelle wiederherstellen.
 		_spawn_building_visual(b["id"], b["cell"], b.get("bau_tage_uebrig", 0) > 0)
 	queue_redraw()
+
+
+# ---------------------------------------------------------------------------
+# STRASSEN-PFADFINDUNG (für Dorfbewohner / Lieferungen)
+# ---------------------------------------------------------------------------
+
+const _ROAD_OFFSETS: Array[Vector2i] = [
+	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+]
+
+
+## Straßenzellen direkt neben einer Gebäude-Grundfläche.
+func get_road_cells_adjacent_to_building(building_cell: Vector2i,
+		building_size: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for x in range(-1, building_size.x + 1):
+		for y in range(-1, building_size.y + 1):
+			if x >= 0 and x < building_size.x and y >= 0 and y < building_size.y:
+				continue
+			var c: Vector2i = building_cell + Vector2i(x, y)
+			if roads.has(c):
+				result.append(c)
+	return result
+
+
+## Kürzester Weg nur über Straßen (BFS). Leeres Array = kein Weg.
+func find_path_on_roads(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
+	if not roads.has(start) or not roads.has(goal):
+		return []
+	if start == goal:
+		return [start]
+
+	var queue: Array[Vector2i] = [start]
+	var came_from: Dictionary = {start: start}
+	var head := 0
+
+	while head < queue.size():
+		var current: Vector2i = queue[head]
+		head += 1
+		for offset in _ROAD_OFFSETS:
+			var next: Vector2i = current + offset
+			if not roads.has(next) or came_from.has(next):
+				continue
+			came_from[next] = current
+			if next == goal:
+				return _reconstruct_road_path(came_from, start, goal)
+			queue.append(next)
+
+	return []
+
+
+func _reconstruct_road_path(came_from: Dictionary, start: Vector2i,
+		goal: Vector2i) -> Array[Vector2i]:
+	var path: Array[Vector2i] = []
+	var current: Vector2i = goal
+	while true:
+		path.push_front(current)
+		if current == start:
+			break
+		current = came_from[current]
+	return path
+
+
+## Bester Straßenweg zwischen zwei Gebäuden (kürzeste Route über angrenzende Straßen).
+func find_road_path_between_buildings(from_cell: Vector2i, from_size: Vector2i,
+		to_cell: Vector2i, to_size: Vector2i) -> Array[Vector2i]:
+	var from_roads := get_road_cells_adjacent_to_building(from_cell, from_size)
+	var to_roads := get_road_cells_adjacent_to_building(to_cell, to_size)
+	if from_roads.is_empty() or to_roads.is_empty():
+		return []
+
+	var best_path: Array[Vector2i] = []
+	var best_len := 999999
+	for fr in from_roads:
+		for tr in to_roads:
+			var path := find_path_on_roads(fr, tr)
+			if path.size() > 0 and path.size() < best_len:
+				best_len = path.size()
+				best_path = path
+	return best_path
