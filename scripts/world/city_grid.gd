@@ -57,10 +57,10 @@ func _ready() -> void:
 
 func _load_terrain_textures() -> void:
 	_terrain_textures.clear()
-	_terrain_atlas = _load_texture(ATLAS_PATH)
+	_terrain_atlas = _load_texture_fresh(ATLAS_PATH)
 	for tile_id in TerrainTile.size():
 		var path: String = TILE_PATHS.get(tile_id, "")
-		var tex := _load_texture(path) if path != "" else null
+		var tex := _load_texture_fresh(path) if path != "" else null
 		if tex == null and _terrain_atlas != null:
 			var atlas_img := _terrain_atlas.get_image()
 			if atlas_img != null and not atlas_img.is_empty():
@@ -71,14 +71,20 @@ func _load_terrain_textures() -> void:
 		_terrain_textures.append(tex)
 
 
-func _load_texture(path: String) -> Texture2D:
+## Lädt PNGs immer frisch von der Festplatte (umgeht Godots Resource-Cache).
+func _load_texture_fresh(path: String) -> Texture2D:
+	var global_path := ProjectSettings.globalize_path(path)
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(global_path)
+		if img != null and not img.is_empty():
+			return ImageTexture.create_from_image(img)
 	if ResourceLoader.exists(path):
 		return load(path)
-	if FileAccess.file_exists(path):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-		if img != null:
-			return ImageTexture.create_from_image(img)
 	return null
+
+
+func _load_texture(path: String) -> Texture2D:
+	return _load_texture_fresh(path)
 
 
 func get_map_size() -> int:
@@ -212,7 +218,26 @@ func _draw_terrain() -> void:
 				draw_texture_rect(tex,
 						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), false)
 			else:
-				draw_colored_polygon(_cell_diamond(c), Color(0.72, 0.78, 0.62))
+				if tile_id == TerrainTile.GRASS and c == Vector2i.ZERO:
+					push_warning("Gras-Textur nicht geladen – zeichne grünen Platzhalter. Pfad: %s"
+							% TILE_PATHS[TerrainTile.GRASS])
+				draw_colored_polygon(_cell_diamond(c), _fallback_terrain_color(tile_id))
+
+
+func _fallback_terrain_color(tile_id: int) -> Color:
+	match tile_id:
+		TerrainTile.RIVER:
+			return Color(0.22, 0.48, 0.88)
+		TerrainTile.ROAD:
+			return Color(0.42, 0.43, 0.46)
+		TerrainTile.TREE:
+			return Color(0.42, 0.68, 0.32)
+		TerrainTile.ROCK:
+			return Color(0.5, 0.52, 0.48)
+		TerrainTile.DIRT:
+			return Color(0.55, 0.45, 0.35)
+		_:
+			return Color(0.72, 0.78, 0.62)
 
 
 func _draw_farm_fields() -> void:
