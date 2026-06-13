@@ -38,9 +38,12 @@ Alle Terrain-Kacheln liegen in **`assets/tiles/iso/`**:
 
 1. Erstelle eine **64×32 px PNG** mit transparenter Fläche außerhalb der Raute.
 2. Die **Raute** füllt die volle 64×32-Fläche (Spitze oben, Spitze unten).
-3. Lege die Datei in `assets/tiles/iso/` ab.
-4. Erweitere den Atlas in `terrain_atlas.png` (Kacheln nebeneinander, je 64 px breit).
-5. Trage die neue Kachel in `city_grid.gd` → `enum TerrainTile` ein.
+3. Lege die Datei in `assets/tiles/iso/` ab, z. B. `grass.png`.
+4. Spiel neu starten – **nur die Einzeldatei reicht** (z. B. `grass.png`).
+
+Optional: `terrain_atlas.png` nur als Fallback, wenn eine Einzeldatei fehlt.
+
+**Wichtig:** Das Spiel lädt **`grass.png` direkt**, nicht nur den Atlas. Nach dem Ersetzen Godot kurz neu laden oder das Spiel neu starten.
 
 **Vorlage:** `assets/templates/tile_1x1_iso_grid.png` (Rastervorlage zum Pixeln).
 
@@ -67,5 +70,5 @@ Die **unterste Bildkante** muss die untere Ecke der Boden-Raute treffen.
 | Datei | Aufgabe |
 |---|---|
 | `scripts/world/iso_utils.gd` | Koordinaten-Umrechnung Zelle ↔ Welt |
-| `scripts/world/city_grid.gd` | TileMapLayer, Terrain, Interaktion |
+| `scripts/world/city_grid.gd` | Boden-Kacheln (lädt `grass.png` usw. direkt) |
 | `scripts/world/building_node.gd` | Gebäude-Sprites auf der Raute |

@@ -14,6 +14,14 @@ enum TerrainTile {
 }
 
 const ATLAS_PATH := "res://assets/tiles/iso/terrain_atlas.png"
+const TILE_PATHS := {
+	TerrainTile.GRASS: "res://assets/tiles/iso/grass.png",
+	TerrainTile.RIVER: "res://assets/tiles/iso/river.png",
+	TerrainTile.ROAD: "res://assets/tiles/iso/road.png",
+	TerrainTile.TREE: "res://assets/tiles/iso/tree.png",
+	TerrainTile.ROCK: "res://assets/tiles/iso/rock.png",
+	TerrainTile.DIRT: "res://assets/tiles/iso/dirt.png",
+}
 const GROUND_OVERSCAN := 4
 
 signal mode_changed(mode: int, building_id: String)
@@ -36,14 +44,31 @@ var _ghost: BuildingNode = null
 var _dragging: bool = false
 var _hovered_building: BuildingNode = null
 var _terrain_atlas: Texture2D = null
+var _terrain_textures: Array[Texture2D] = []
 
 
 func _ready() -> void:
 	GameState.region_claimed.connect(func(_id): _refresh_terrain_tiles())
 	GameState.building_completed.connect(_on_building_completed)
 	GameState.farm_fields_changed.connect(func(_c): queue_redraw())
-	_terrain_atlas = _load_texture(ATLAS_PATH)
+	_load_terrain_textures()
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+
+func _load_terrain_textures() -> void:
+	_terrain_textures.clear()
+	_terrain_atlas = _load_texture(ATLAS_PATH)
+	for tile_id in TerrainTile.size():
+		var path: String = TILE_PATHS.get(tile_id, "")
+		var tex := _load_texture(path) if path != "" else null
+		if tex == null and _terrain_atlas != null:
+			var atlas_img := _terrain_atlas.get_image()
+			if atlas_img != null and not atlas_img.is_empty():
+				var region := atlas_img.get_region(Rect2i(
+						tile_id * IsoUtils.TILE_WIDTH, 0,
+						IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT))
+				tex = ImageTexture.create_from_image(region)
+		_terrain_textures.append(tex)
 
 
 func _load_texture(path: String) -> Texture2D:
@@ -140,6 +165,7 @@ func _cell_to_tile_id(cell: Vector2i) -> int:
 
 
 func _refresh_terrain_tiles() -> void:
+	_load_terrain_textures()
 	queue_redraw()
 
 
@@ -179,11 +205,12 @@ func _draw_terrain() -> void:
 			else:
 				tile_id = _cell_to_tile_id(c)
 			var pos := IsoUtils.terrain_texture_pos(c)
-			if _terrain_atlas != null:
-				var src := Rect2(tile_id * IsoUtils.TILE_WIDTH, 0,
-						IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)
-				draw_texture_rect_region(_terrain_atlas,
-						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), src)
+			var tex: Texture2D = null
+			if tile_id >= 0 and tile_id < _terrain_textures.size():
+				tex = _terrain_textures[tile_id]
+			if tex != null:
+				draw_texture_rect(tex,
+						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), false)
 			else:
 				draw_colored_polygon(_cell_diamond(c), Color(0.72, 0.78, 0.62))
 
