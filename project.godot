@@ -1,42 +1,26 @@
 ; Engine configuration file.
-; It's best edited using the editor UI and not directly,
-; since the parameters that go here are not all obvious.
-;
-; Format:
-;   [section] ; section goes between []
-;   param=value ; assign values to parameters
+; Godot 4.6 – Minimaler isometrischer City-Builder (Neustart)
 
 config_version=5
 
 [application]
 
-config/name="Vegane Stadt 2040"
-config/description="2.5D-Städteaufbauspiel in einem futuristischen veganen Deutschland."
-run/main_scene="res://scenes/main_menu.tscn"
-config/features=PackedStringArray("4.4")
+config/name="Iso City Starter"
+config/description="Minimaler isometrischer Tilemap-Starter (64×32)."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6")
 
 [autoload]
 
-GameData="*res://scripts/autoload/game_data.gd"
-GameState="*res://scripts/autoload/game_state.gd"
-ResearchManager="*res://scripts/autoload/research_manager.gd"
-SaveManager="*res://scripts/autoload/save_manager.gd"
+BuildingData="*res://scripts/building_data.gd"
 
 [display]
 
-window/size/viewport_width=1920
-window/size/viewport_height=1080
-window/size/mode=2
+window/size/viewport_width=1280
+window/size/viewport_height=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
-window/stretch/scale=1.0
-
-[input_devices]
-
-pointing/emulate_touch_from_mouse=false
 
 [rendering]
 
+textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
-environment/defaults/default_clear_color=Color(0.62, 0.8, 0.92, 1)

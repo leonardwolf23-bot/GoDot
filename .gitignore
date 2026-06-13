@@ -1,16 +1,4 @@
-# Godot 4 – automatisch erzeugte Dateien
 .godot/
-*.translation
-
-# Importierte Assets-Caches
-.import/
-
-# Betriebssystem-Müll
-.DS_Store
-Thumbs.db
-
-# Exportierte Builds
-export/
-*.exe
-*.pck
-*.zip
+*.import
+export.cfg
+export_presets.cfg

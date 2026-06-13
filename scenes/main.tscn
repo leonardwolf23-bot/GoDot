@@ -1,0 +1,60 @@
+[gd_scene load_steps=5 format=3 uid="uid://main_scene_001"]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/city_grid.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/camera_controller.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="4"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+
+[node name="CityGrid" type="Node2D" parent="."]
+script = ExtResource("2")
+
+[node name="Camera" type="Camera2D" parent="."]
+script = ExtResource("3")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="HUD" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4")
+
+[node name="Panel" type="PanelContainer" parent="UI/HUD"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 520.0
+offset_bottom = 120.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/HUD/Panel"]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="UI/HUD/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Taste 1/2/3 = Gebäude | Linksklick = platzieren"
+
+[node name="ButtonRow" type="HBoxContainer" parent="UI/HUD/Panel/VBox"]
+layout_mode = 2
+
+[node name="Btn1" type="Button" parent="UI/HUD/Panel/VBox/ButtonRow"]
+layout_mode = 2
+text = "1x1"
+
+[node name="Btn2" type="Button" parent="UI/HUD/Panel/VBox/ButtonRow"]
+layout_mode = 2
+text = "2x2"
+
+[node name="Btn3" type="Button" parent="UI/HUD/Panel/VBox/ButtonRow"]
+layout_mode = 2
+text = "3x3"
+
+[node name="CancelButton" type="Button" parent="UI/HUD/Panel/VBox"]
+layout_mode = 2
+text = "Abbrechen (Esc)"
