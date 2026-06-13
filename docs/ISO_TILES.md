@@ -1,8 +1,11 @@
 # Isometrisches Tilemap-System (64×32)
 
-Das Spiel nutzt ein **isometrisches 64×32-Raster** mit Godots `TileMapLayer`.
-Die Spiellogik (Gebäude, Pfadfindung, Ressourcen) arbeitet weiterhin in
+Das Spiel nutzt ein **isometrisches 64×32-Raster** mit einem gemeinsamen Koordinatensystem
+für Boden, Gebäude und Mausklicks. Die Spiellogik arbeitet weiterhin in
 **logischen Gitterzellen** – nur die Darstellung ist isometrisch.
+
+Die nördliche Spitze jeder Zelle ist der Ankerpunkt (`cell_to_world`). Gebäude werden
+als **Iso-Quader** (oder PNG-Sprite mit passender Boden-Raute) auf dieser Grundfläche gezeichnet.
 
 ---
 

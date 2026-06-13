@@ -1,6 +1,6 @@
 class_name BuildingNode
 extends Node2D
-## Gebäude-Darstellung im isometrischen 64×32-Raster.
+## Gebäude-Darstellung im isometrischen 64×32-Raster (Iso-Quader oder Sprite).
 
 var building_id: String = ""
 var cell: Vector2i = Vector2i.ZERO
@@ -29,8 +29,8 @@ func setup(p_building_id: String, p_cell: Vector2i) -> void:
 	queue_redraw()
 
 
-func _footprint_size() -> Vector2:
-	return IsoUtils.footprint_size(size)
+func _footprint_corners() -> PackedVector2Array:
+	return IsoUtils.footprint_corners(size)
 
 
 func _draw() -> void:
@@ -38,53 +38,89 @@ func _draw() -> void:
 	if data.is_empty():
 		return
 
-	var fp := _footprint_size()
+	var top: Vector2 = _footprint_corners()[0]
+	var right: Vector2 = _footprint_corners()[1]
+	var bottom: Vector2 = _footprint_corners()[2]
+	var left: Vector2 = _footprint_corners()[3]
 
 	if is_under_construction and not is_ghost:
 		var site := _load_shared_texture("res://assets/buildings/baustelle.png")
 		if site != null:
-			_draw_sprite_in_footprint(site, Color.WHITE)
+			_draw_sprite_on_footprint(site, left, right, bottom, Color.WHITE)
 			return
-		_draw_footprint_fill(Color(0.85, 0.6, 0.2))
+		_draw_iso_prism(data, top, right, bottom, left, Color(0.85, 0.6, 0.2))
 		return
 
 	if _texture != null:
 		var tint := Color.WHITE
 		if is_ghost:
 			tint = Color(0.4, 1.0, 0.4, 0.6) if ghost_valid else Color(1.0, 0.3, 0.3, 0.6)
-		_draw_sprite_in_footprint(_texture, tint)
+		_draw_sprite_on_footprint(_texture, left, right, bottom, tint)
 		return
 
 	if building_id == "strasse" and not is_ghost:
-		_draw_footprint_fill(Color(0.38, 0.39, 0.42))
+		draw_colored_polygon(_footprint_corners(), Color(0.38, 0.39, 0.42))
 		return
 
 	var base_color: Color = data["farbe"]
 	if is_ghost:
 		base_color = Color(0.3, 1.0, 0.3, 0.55) if ghost_valid else Color(1.0, 0.25, 0.25, 0.55)
 
-	_draw_footprint_fill(base_color.darkened(0.15))
-	var pts := IsoUtils.footprint_polygon_local(size)
-	draw_colored_polygon(pts, base_color)
-	draw_polyline(pts, base_color.lightened(0.15), 2.0, true)
+	_draw_iso_prism(data, top, right, bottom, left, base_color)
 
 	if not is_ghost and building_id != "strasse":
 		var label: String = data.get("name", building_id)
-		var center := Vector2(fp.x * 0.5, fp.y * 0.45)
-		draw_string(ThemeDB.fallback_font, center + Vector2(-fp.x * 0.35, 0),
-				label, HORIZONTAL_ALIGNMENT_LEFT, int(fp.x * 0.9), 10, Color.WHITE)
+		var center := (top + bottom) * 0.5 + Vector2(0.0, -data.get("hoehe", 24) * 0.5)
+		draw_string(ThemeDB.fallback_font, center + Vector2(-40, 0),
+				label, HORIZONTAL_ALIGNMENT_LEFT, 120, 10, Color.WHITE)
 
 
-func _draw_footprint_fill(color: Color) -> void:
-	draw_colored_polygon(IsoUtils.footprint_polygon_local(size), color)
+func _draw_iso_prism(data: Dictionary, top: Vector2, right: Vector2, bottom: Vector2,
+		left: Vector2, base_color: Color) -> void:
+	var height: float = data.get("hoehe", 24)
+	var roof_color := base_color.lightened(0.15)
+	var left_wall := base_color.darkened(0.25)
+	var right_wall := base_color.darkened(0.45)
+
+	if is_ghost:
+		roof_color = base_color
+		left_wall = base_color.darkened(0.15)
+		right_wall = base_color.darkened(0.3)
+
+	var up := Vector2(0.0, -height)
+
+	draw_colored_polygon(PackedVector2Array([
+		left, bottom, bottom + up, left + up,
+	]), left_wall)
+	draw_colored_polygon(PackedVector2Array([
+		bottom, right, right + up, bottom + up,
+	]), right_wall)
+	draw_colored_polygon(PackedVector2Array([
+		top + up, right + up, bottom + up, left + up,
+	]), roof_color)
+
+	var outline := Color(0.0, 0.0, 0.0, 0.35)
+	draw_polyline(PackedVector2Array([
+		top + up, right + up, bottom + up, left + up, top + up,
+	]), outline, 1.5, true)
+	draw_line(left, left + up, outline, 1.5)
+	draw_line(bottom, bottom + up, outline, 1.5)
+	draw_line(right, right + up, outline, 1.5)
+
+	if height >= 36.0 and not is_ghost:
+		var glow := Color(0.7, 1.0, 0.95, 0.8)
+		var steps: int = int(height / 18.0)
+		for i in range(1, steps):
+			var y_offset := Vector2(0.0, -i * 18.0)
+			draw_line(left + y_offset, bottom + y_offset, glow, 1.0)
 
 
-func _draw_sprite_in_footprint(tex: Texture2D, tint: Color) -> void:
-	var fp := _footprint_size()
+func _draw_sprite_on_footprint(tex: Texture2D, left: Vector2, right: Vector2,
+		bottom: Vector2, tint: Color) -> void:
+	var dest_w := right.x - left.x
 	var tex_size := tex.get_size()
-	var dest_w := fp.x
 	var dest_h := tex_size.y * (dest_w / tex_size.x)
-	var dest := Rect2(0.0, fp.y - dest_h, dest_w, dest_h)
+	var dest := Rect2(left.x, bottom.y - dest_h, dest_w, dest_h)
 	draw_texture_rect(tex, dest, false, tint)
 
 

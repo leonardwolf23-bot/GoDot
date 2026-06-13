@@ -1,6 +1,6 @@
 class_name CityGrid
 extends Node2D
-## CityGrid – isometrisches 64×32-Raster (45°-Projektion, TileMap für Boden-Kacheln).
+## CityGrid – isometrisches 64×32-Raster (klassische Iso-Projektion, Atlas-Boden).
 
 enum Mode { NONE, BUILD, DEMOLISH, FARM_PAINT }
 
@@ -35,41 +35,15 @@ var terrain: Dictionary = {}
 var _ghost: BuildingNode = null
 var _dragging: bool = false
 var _hovered_building: BuildingNode = null
-var _terrain_layer: TileMapLayer = null
-var _tile_source_id: int = 0
+var _terrain_atlas: Texture2D = null
 
 
 func _ready() -> void:
 	GameState.region_claimed.connect(func(_id): _refresh_terrain_tiles())
 	GameState.building_completed.connect(_on_building_completed)
 	GameState.farm_fields_changed.connect(func(_c): queue_redraw())
-	_setup_tilemap()
+	_terrain_atlas = _load_texture(ATLAS_PATH)
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-
-
-func _setup_tilemap() -> void:
-	_terrain_layer = TileMapLayer.new()
-	_terrain_layer.name = "TerrainLayer"
-	_terrain_layer.z_index = 0
-	add_child(_terrain_layer)
-
-	var tile_set := TileSet.new()
-	tile_set.tile_shape = TileSet.TILE_SHAPE_ISOMETRIC
-	tile_set.tile_layout = TileSet.TILE_LAYOUT_STACKED
-	tile_set.tile_size = Vector2i(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)
-
-	var atlas := TileSetAtlasSource.new()
-	var tex := _load_texture(ATLAS_PATH)
-	if tex == null:
-		push_warning("Terrain-Atlas nicht gefunden: %s" % ATLAS_PATH)
-		return
-	atlas.texture = tex
-	atlas.texture_region_size = Vector2i(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)
-	for i in TerrainTile.size():
-		atlas.create_tile(Vector2i(i, 0))
-
-	_tile_source_id = tile_set.add_source(atlas)
-	_terrain_layer.tile_set = tile_set
 
 
 func _load_texture(path: String) -> Texture2D:
@@ -98,20 +72,14 @@ func get_center_cell() -> Vector2i:
 
 
 func cell_to_world(cell: Vector2i) -> Vector2:
-	if _terrain_layer and _terrain_layer.tile_set:
-		return _terrain_layer.map_to_local(cell) - Vector2(IsoUtils.half_w(), IsoUtils.half_h())
 	return IsoUtils.cell_to_world(cell)
 
 
 func cell_to_world_center(cell: Vector2i) -> Vector2:
-	if _terrain_layer and _terrain_layer.tile_set:
-		return _terrain_layer.map_to_local(cell)
 	return IsoUtils.cell_to_world_center(cell)
 
 
 func world_to_cell(world_pos: Vector2) -> Vector2i:
-	if _terrain_layer and _terrain_layer.tile_set:
-		return _terrain_layer.local_to_map(world_pos)
 	return IsoUtils.world_to_cell(world_pos)
 
 
@@ -172,9 +140,34 @@ func _cell_to_tile_id(cell: Vector2i) -> int:
 
 
 func _refresh_terrain_tiles() -> void:
-	if _terrain_layer == null:
-		return
-	_terrain_layer.clear()
+	queue_redraw()
+
+
+func _cell_diamond(cell: Vector2i) -> PackedVector2Array:
+	var top := cell_to_world(cell)
+	var hw := IsoUtils.half_w()
+	var hh := IsoUtils.half_h()
+	return PackedVector2Array([
+		top,
+		top + Vector2(hw, hh),
+		top + Vector2(0.0, hh * 2.0),
+		top + Vector2(-hw, hh),
+	])
+
+
+func _draw() -> void:
+	_draw_terrain()
+	_draw_farm_fields()
+
+	if current_mode != Mode.NONE:
+		var s := get_map_size()
+		var line_color := Color(0.0, 0.0, 0.0, 0.18)
+		for x in range(s):
+			for y in range(s):
+				draw_polyline(_cell_diamond(Vector2i(x, y)), line_color, 1.0, true)
+
+
+func _draw_terrain() -> void:
 	var s := get_map_size()
 	var pad := GROUND_OVERSCAN
 	for x in range(-pad, s + pad):
@@ -185,27 +178,14 @@ func _refresh_terrain_tiles() -> void:
 				tile_id = TerrainTile.DIRT
 			else:
 				tile_id = _cell_to_tile_id(c)
-			_terrain_layer.set_cell(c, _tile_source_id, Vector2i(tile_id, 0))
-	queue_redraw()
-
-
-func _draw() -> void:
-	_draw_farm_fields()
-
-	if current_mode != Mode.NONE:
-		var s := get_map_size()
-		var line_color := Color(0.0, 0.0, 0.0, 0.18)
-		for x in range(s):
-			for y in range(s):
-				_draw_cell_outline(Vector2i(x, y), line_color, 1.0)
-
-
-func _draw_cell_outline(cell: Vector2i, color: Color, width: float) -> void:
-	var origin := cell_to_world(cell)
-	var pts := PackedVector2Array()
-	for p in IsoUtils.diamond_polygon_local():
-		pts.append(origin + p)
-	draw_polyline(pts, color, width, true)
+			var pos := IsoUtils.terrain_texture_pos(c)
+			if _terrain_atlas != null:
+				var src := Rect2(tile_id * IsoUtils.TILE_WIDTH, 0,
+						IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)
+				draw_texture_rect_region(_terrain_atlas,
+						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), src)
+			else:
+				draw_colored_polygon(_cell_diamond(c), Color(0.72, 0.78, 0.62))
 
 
 func _draw_farm_fields() -> void:
@@ -217,15 +197,12 @@ func _draw_farm_fields() -> void:
 			var crop: String = str(f.get("crop", ""))
 			if crop == "":
 				continue
-			var origin := cell_to_world(fc)
-			var pts := PackedVector2Array()
-			for p in IsoUtils.diamond_polygon_local():
-				pts.append(origin + p)
+			var pts := _cell_diamond(fc)
 			var col: Color = GameData.get_crop_color(crop)
 			draw_colored_polygon(pts, col.darkened(0.08))
 			draw_polyline(pts, col.lightened(0.12), 2.0, true)
 			var label: String = GameData.get_crop_name(crop).substr(0, 3)
-			var center := origin + Vector2(IsoUtils.half_w(), IsoUtils.half_h())
+			var center := cell_to_world_center(fc)
 			draw_string(ThemeDB.fallback_font, center + Vector2(-10, 4),
 					label, HORIZONTAL_ALIGNMENT_LEFT, 28, 9, Color(0.1, 0.1, 0.1, 0.85))
 
@@ -419,9 +396,9 @@ func _spawn_building_visual(building_id: String, cell: Vector2i,
 
 	var size: Vector2i = GameData.get_building(building_id)["groesse"]
 	if building_id == "strasse":
-		node.z_index = 5 + IsoUtils.depth_key(cell, size)
+		node.z_index = 5 + int(node.position.y) + size.y
 	else:
-		node.z_index = 10 + IsoUtils.depth_key(cell, size)
+		node.z_index = 10 + int(node.position.y) + size.y
 
 	for x in range(size.x):
 		for y in range(size.y):
