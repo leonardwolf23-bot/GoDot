@@ -19,7 +19,6 @@ func _ready() -> void:
 • Straßen verbinden fast alle Gebäude mit dem Netz
 • Lagerhaus: Überschuss wird von Bürgern eingelagert
 • Holzfäller +20 Holz/Tag, Steinmetz +20 Steine/Tag
-• Bauarbeiter (oben rechts) für Baustellen ausbilden
 • 1 Tag = 10 Sekunden bei Geschwindigkeit 1x
 • Veganer Anteil unter 50 % = Niederlage"""
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL

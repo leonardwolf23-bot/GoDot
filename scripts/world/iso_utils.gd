@@ -1,6 +1,7 @@
 class_name IsoUtils
 extends RefCounted
 ## Isometrische Koordinaten-Hilfe für 64×32-Kacheln (Raute 64 px breit × 32 px hoch).
+## Die Umrechnung orientiert sich an Godots TileMapLayer (map_to_local / local_to_map).
 
 const TILE_WIDTH := 64
 const TILE_HEIGHT := 32
@@ -14,23 +15,32 @@ static func half_h() -> float:
 	return TILE_HEIGHT / 2.0
 
 
-## Obere Ecke der Raute (Godot-Isometric-Origin).
-static func cell_to_world(cell: Vector2i) -> Vector2:
+## Zellmitte – entspricht TileMapLayer.map_to_local().
+static func cell_center_to_world(cell: Vector2i) -> Vector2:
 	var hw := half_w()
 	var hh := half_h()
-	return Vector2((cell.x - cell.y) * hw, (cell.x + cell.y) * hh)
+	return Vector2(
+			(cell.x - cell.y) * hw + hw,
+			(cell.x + cell.y) * hh + hh
+	)
+
+
+## Obere linke Ecke der Kachel-Bounding-Box (Anker für Gebäude-Sprites).
+static func cell_to_world(cell: Vector2i) -> Vector2:
+	return cell_center_to_world(cell) - Vector2(half_w(), half_h())
 
 
 ## Mittelpunkt der Raute.
 static func cell_to_world_center(cell: Vector2i) -> Vector2:
-	return cell_to_world(cell) + Vector2(0.0, half_h())
+	return cell_center_to_world(cell)
 
 
 static func world_to_cell(world_pos: Vector2) -> Vector2i:
 	var hw := half_w()
 	var hh := half_h()
-	var col := (world_pos.x / hw + world_pos.y / hh) / 2.0
-	var row := (world_pos.y / hh - world_pos.x / hw) / 2.0
+	# Inverse zu Godots map_to_local (Zellmitte).
+	var col := (world_pos.x / hw + world_pos.y / hh) / 2.0 - 0.5
+	var row := (world_pos.y / hh - world_pos.x / hw) / 2.0 - 0.5
 	return Vector2i(int(floor(col)), int(floor(row)))
 
 

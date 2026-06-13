@@ -265,7 +265,6 @@ func _create_side_buttons() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	add_child(vbox)
 
-	_add_side_button(vbox, "Bauarbeiter ausbilden", func(): GameState.train_builder())
 	_add_side_button(vbox, "Gesundheit", func():
 		_health_panel.visible = not _health_panel.visible)
 	_add_side_button(vbox, "Deutschland", func(): _region_panel.open())

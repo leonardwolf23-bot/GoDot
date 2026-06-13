@@ -229,8 +229,6 @@ func _advance_one_day() -> void:
 func _advance_construction() -> void:
 	for b in buildings:
 		if b.get("bau_tage_uebrig", 0) > 0:
-			if not has_builder_at_site(b["cell"]):
-				continue
 			b["bau_tage_uebrig"] -= 1
 			if b["bau_tage_uebrig"] <= 0:
 				release_workers_at_building(b["cell"])
@@ -519,8 +517,6 @@ func register_building(building_id: String, cell: Vector2i) -> bool:
 	if data.get("ist_lager", false):
 		entry["storage"] = {}
 	buildings.append(entry)
-	if building_id != "strasse" and entry["bau_tage_uebrig"] > 0:
-		assign_builder_to_construction(cell)
 	_occupancy_dirty = true
 	resources_changed.emit()
 	building_registered.emit(building_id)
@@ -778,20 +774,6 @@ func get_idle_villagers() -> Array:
 	return result
 
 
-func train_builder() -> bool:
-	for c in citizens:
-		if c["profession"] == GameData.PROFESSION_VILLAGER:
-			c["profession"] = GameData.PROFESSION_BUILDER
-			c["work_cell"] = Vector2i(-1, -1)
-			c["days_since_meal"] = 0
-			_assign_idle_builders()
-			citizens_changed.emit()
-			notification.emit("Neuer Bauarbeiter ausgebildet!")
-			return true
-	notification.emit("Kein freier Bürger für die Ausbildung.")
-	return false
-
-
 func assign_farmer_to_building(cell: Vector2i) -> bool:
 	for c in citizens:
 		if c["profession"] == GameData.PROFESSION_VILLAGER \
@@ -803,44 +785,11 @@ func assign_farmer_to_building(cell: Vector2i) -> bool:
 	return false
 
 
-func assign_builder_to_construction(cell: Vector2i) -> bool:
-	for c in citizens:
-		if c["profession"] == GameData.PROFESSION_BUILDER \
-				and c["work_cell"] == Vector2i(-1, -1):
-			c["work_cell"] = cell
-			return true
-	return false
-
-
-func _assign_idle_builders() -> void:
-	for b in buildings:
-		if b.get("bau_tage_uebrig", 0) > 0:
-			if not has_builder_at_site(b["cell"]):
-				assign_builder_to_construction(b["cell"])
-
-
 func release_workers_at_building(cell: Vector2i) -> void:
 	for c in citizens:
-		if c["work_cell"] == cell:
-			if c["profession"] == GameData.PROFESSION_FARMER \
-					or c["profession"] == GameData.PROFESSION_BUILDER:
-				c["profession"] = GameData.PROFESSION_VILLAGER
+		if c["work_cell"] == cell and c["profession"] == GameData.PROFESSION_FARMER:
+			c["profession"] = GameData.PROFESSION_VILLAGER
 			c["work_cell"] = Vector2i(-1, -1)
-	citizens_changed.emit()
-
-
-func has_builder_at_site(cell: Vector2i) -> bool:
-	for c in citizens:
-		if c["profession"] == GameData.PROFESSION_BUILDER and c["work_cell"] == cell:
-			return true
-	return false
-
-
-func feed_builder(citizen_id: int) -> void:
-	var c := get_citizen(citizen_id)
-	if c.is_empty():
-		return
-	c["days_since_meal"] = 0
 	citizens_changed.emit()
 
 
@@ -1182,12 +1131,7 @@ func take_pending_from_building(building_cell: Vector2i, resource: String,
 func _simulate_citizen_needs() -> void:
 	var to_remove: Array[int] = []
 	for c in citizens:
-		if c["profession"] == GameData.PROFESSION_BUILDER:
-			c["days_since_meal"] += 1
-			if c["days_since_meal"] > GameData.BUILDER_STARVE_DAYS:
-				to_remove.append(c["id"])
-				notification.emit("Ein Bauarbeiter ist verhungert!")
-		elif c["housing_cell"] != Vector2i(-1, -1):
+		if c["housing_cell"] != Vector2i(-1, -1):
 			c["hunger_days"] = 0
 			c["days_since_meal"] = 0
 		else:
@@ -1327,10 +1271,15 @@ func from_save_dict(data: Dictionary) -> void:
 	_next_citizen_id = int(data.get("next_citizen_id", 1))
 	if data.has("citizens"):
 		for c in data["citizens"]:
+			var profession: String = c["profession"]
+			var work_cell := Vector2i(int(c["work_x"]), int(c["work_y"]))
+			if profession == GameData.PROFESSION_BUILDER:
+				profession = GameData.PROFESSION_VILLAGER
+				work_cell = Vector2i(-1, -1)
 			citizens.append({
 				"id": int(c["id"]),
-				"profession": c["profession"],
-				"work_cell": Vector2i(int(c["work_x"]), int(c["work_y"])),
+				"profession": profession,
+				"work_cell": work_cell,
 				"housing_cell": Vector2i(int(c["housing_x"]), int(c["housing_y"])),
 				"days_since_meal": int(c.get("days_since_meal", 0)),
 				"hunger_days": int(c.get("hunger_days", 0)),

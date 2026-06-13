@@ -163,15 +163,6 @@ func _find_delivery_carrier(job: Dictionary = {}) -> int:
 		if c["profession"] == GameData.PROFESSION_VILLAGER:
 			if _can_carry(c["id"]):
 				return c["id"]
-
-	for c in GameState.citizens:
-		if c["profession"] == GameData.PROFESSION_BUILDER:
-			if c["work_cell"] != Vector2i(-1, -1):
-				var b := GameState.get_building_at_cell(c["work_cell"])
-				if not b.is_empty() and b.get("bau_tage_uebrig", 0) > 0:
-					continue
-			if _can_carry(c["id"]):
-				return c["id"]
 	return -1
 
 
@@ -216,33 +207,10 @@ func _update_all_jobs() -> void:
 		if node.is_moving() or node.is_delivering():
 			continue
 		match c["profession"]:
-			GameData.PROFESSION_BUILDER:
-				_update_builder(c, node)
 			GameData.PROFESSION_FARMER:
 				_update_farmer(c, node)
 			_:
 				_update_villager(c, node)
-
-
-func _update_builder(c: Dictionary, node: VillagerNode) -> void:
-	if c["days_since_meal"] > GameData.BUILDER_HUNGER_DAYS:
-		var food_cell := _find_food_building_cell()
-		if food_cell != Vector2i(-1, -1):
-			node.walk_to_cell(food_cell)
-		return
-
-	var site: Vector2i = c["work_cell"]
-	if site == Vector2i(-1, -1):
-		return
-
-	var b := GameState.get_building_at_cell(site)
-	if b.is_empty() or b.get("bau_tage_uebrig", 0) <= 0:
-		return
-
-	var access := _access_cell(site)
-	if _grid.world_to_cell(node.position) == access:
-		return
-	node.walk_to_cell(access)
 
 
 func _update_farmer(c: Dictionary, node: VillagerNode) -> void:
@@ -283,8 +251,3 @@ func _on_villager_arrived(citizen_id: int) -> void:
 	var c := GameState.get_citizen(citizen_id)
 	if c.is_empty():
 		return
-	if c["profession"] == GameData.PROFESSION_BUILDER \
-			and c["days_since_meal"] > GameData.BUILDER_HUNGER_DAYS:
-		if GameState.get_total_stored("essen") > 0.0:
-			GameState.feed_builder(citizen_id)
-			GameState.withdraw_resource("essen", 2.0)

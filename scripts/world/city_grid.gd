@@ -98,14 +98,20 @@ func get_center_cell() -> Vector2i:
 
 
 func cell_to_world(cell: Vector2i) -> Vector2:
+	if _terrain_layer and _terrain_layer.tile_set:
+		return _terrain_layer.map_to_local(cell) - Vector2(IsoUtils.half_w(), IsoUtils.half_h())
 	return IsoUtils.cell_to_world(cell)
 
 
 func cell_to_world_center(cell: Vector2i) -> Vector2:
+	if _terrain_layer and _terrain_layer.tile_set:
+		return _terrain_layer.map_to_local(cell)
 	return IsoUtils.cell_to_world_center(cell)
 
 
 func world_to_cell(world_pos: Vector2) -> Vector2i:
+	if _terrain_layer and _terrain_layer.tile_set:
+		return _terrain_layer.local_to_map(world_pos)
 	return IsoUtils.world_to_cell(world_pos)
 
 

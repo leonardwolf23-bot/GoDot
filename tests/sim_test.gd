@@ -76,7 +76,6 @@ func _test_building_and_economy() -> void:
 
 	var money_before: float = GameState.resources["satoshis"]
 	check(GameState.can_build("wohnmodul"), "Wohnmodul ist bezahlbar")
-	check(GameState.train_builder(), "Bauarbeiter für Baustelle ausgebildet")
 	check(GameState.register_building("wohnmodul", Vector2i(5, 5)),
 			"Wohnmodul kann registriert werden")
 	check(GameState.resources["satoshis"] == money_before - 150,
@@ -202,7 +201,6 @@ func _test_construction() -> void:
 			"Straßen haben keine Bauzeit")
 
 	## Gebäude brauchen mehrere Tage und produzieren solange nichts.
-	check(GameState.train_builder(), "Bauarbeiter für Garten-Baustelle")
 	GameState.register_building("gemeinschaftsgarten", Vector2i(4, 4))
 	check(GameState.buildings[-1]["bau_tage_uebrig"] == GameData.CONSTRUCTION_DAYS,
 			"Gebäude starten mit %d Tagen Bauzeit" % GameData.CONSTRUCTION_DAYS)
@@ -229,7 +227,6 @@ func _test_warehouse_deliveries() -> void:
 	check(GameState.can_build("lagerhaus"),
 			"Lagerhaus ist mit Start-Rohstoffen baubar")
 
-	check(GameState.train_builder(), "Bauarbeiter für Lagerhaus")
 	check(GameState.register_building("lagerhaus", Vector2i(6, 6)),
 			"Lagerhaus kann registriert werden")
 	for _i in range(GameData.CONSTRUCTION_DAYS):
@@ -241,7 +238,6 @@ func _test_warehouse_deliveries() -> void:
 	check(lagerhaus_ready, "Lagerhaus ist fertig gebaut")
 
 	## Farm-Ernte wird als Lieferjob zum Lagerhaus eingeplant.
-	check(GameState.train_builder(), "Bauarbeiter für Bauernhof")
 	GameState.register_building("bauernhof", Vector2i(12, 12))
 	for _i in range(GameData.CONSTRUCTION_DAYS):
 		GameState._advance_one_day()
