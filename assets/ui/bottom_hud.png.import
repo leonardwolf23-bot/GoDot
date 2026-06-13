@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bottomhudbar01"
-path="res://.godot/imported/bottom_hud.png-deadbeef0000000000000000000003.ctex"
+uid="uid://cgw8jstciuawu"
+path="res://.godot/imported/bottom_hud.png-f425119818f4c83cc6aae2b3ee4df1da.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/ui/bottom_hud.png"
-dest_files=["res://.godot/imported/bottom_hud.png-deadbeef0000000000000000000003.ctex"]
+dest_files=["res://.godot/imported/bottom_hud.png-f425119818f4c83cc6aae2b3ee4df1da.ctex"]
 
 [params]
 

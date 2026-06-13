@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://lefthealthhud1"
-path="res://.godot/imported/left_health_hud.png-deadbeef0000000000000000000006.ctex"
+uid="uid://di815sgeouxuu"
+path="res://.godot/imported/left_health_hud.png-9c79dcb06d634cc88e50939a99329208.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/ui/left_health_hud.png"
-dest_files=["res://.godot/imported/left_health_hud.png-deadbeef0000000000000000000006.ctex"]
+dest_files=["res://.godot/imported/left_health_hud.png-9c79dcb06d634cc88e50939a99329208.ctex"]
 
 [params]
 

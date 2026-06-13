@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bholzicon001"
-path="res://.godot/imported/holz.png-deadbeef0000000000000000000001.ctex"
+uid="uid://bhol0icon001"
+path="res://.godot/imported/holz.png-2556b0cda4d103819b121cd669cc5eb3.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/icons/holz.png"
-dest_files=["res://.godot/imported/holz.png-deadbeef0000000000000000000001.ctex"]
+dest_files=["res://.godot/imported/holz.png-2556b0cda4d103819b121cd669cc5eb3.ctex"]
 
 [params]
 

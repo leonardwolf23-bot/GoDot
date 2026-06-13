@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bholzfaeller01"
-path="res://.godot/imported/holzfaeller.png-deadbeef0000000000000000000004.ctex"
+uid="uid://c1jbio62xd1ge"
+path="res://.godot/imported/holzfaeller.png-dc1c4769c2b1b421be7ff884d4be263c.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/buildings/holzfaeller.png"
-dest_files=["res://.godot/imported/holzfaeller.png-deadbeef0000000000000000000004.ctex"]
+dest_files=["res://.godot/imported/holzfaeller.png-dc1c4769c2b1b421be7ff884d4be263c.ctex"]
 
 [params]
 

@@ -4,7 +4,7 @@ extends Node2D
 
 const VILLAGER_ROOT := "res://assets/test/villager/"
 const WALK_FPS := 10.0
-const MOVE_SPEED := 64.0
+const MOVE_SPEED := 48.0
 
 const GRID_DELTA_TO_DIR := {
 	Vector2i(1, 0): "east",
