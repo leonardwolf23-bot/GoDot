@@ -1,10 +1,10 @@
 class_name VillagerNode
 extends Node2D
-## Sichtbarer Bürger – läuft orthogonal, liefert Waren ins Lagerhaus.
+## Sichtbarer Bürger – läuft auf dem Iso-Gitter, liefert Waren ins Lagerhaus.
 
 const VILLAGER_ROOT := "res://assets/test/villager/"
 const WALK_FPS := 10.0
-const MOVE_SPEED := 64.0
+const MOVE_SPEED := 48.0
 
 const GRID_DELTA_TO_DIR := {
 	Vector2i(1, 0): "east",

@@ -1,10 +1,28 @@
 class_name CityGrid
 extends Node2D
-## CityGrid – orthogonales 64×64-Raster (Draufsicht, links/rechts + oben/unten).
-
-const TILE_SIZE := 64.0
+## CityGrid – isometrisches 64×32-Raster (klassische Iso-Projektion, Atlas-Boden).
 
 enum Mode { NONE, BUILD, DEMOLISH, FARM_PAINT }
+
+enum TerrainTile {
+	GRASS,
+	RIVER,
+	ROAD,
+	TREE,
+	ROCK,
+	DIRT,
+}
+
+const ATLAS_PATH := "res://assets/tiles/iso/terrain_atlas.png"
+const TILE_PATHS := {
+	TerrainTile.GRASS: "res://assets/tiles/iso/grass.png",
+	TerrainTile.RIVER: "res://assets/tiles/iso/river.png",
+	TerrainTile.ROAD: "res://assets/tiles/iso/road.png",
+	TerrainTile.TREE: "res://assets/tiles/iso/tree.png",
+	TerrainTile.ROCK: "res://assets/tiles/iso/rock.png",
+	TerrainTile.DIRT: "res://assets/tiles/iso/dirt.png",
+}
+const GROUND_OVERSCAN := 4
 
 signal mode_changed(mode: int, building_id: String)
 signal cell_hovered(cell: Vector2i)
@@ -25,27 +43,48 @@ var terrain: Dictionary = {}
 var _ghost: BuildingNode = null
 var _dragging: bool = false
 var _hovered_building: BuildingNode = null
-
-var _grass_base: Texture2D = null
-const GROUND_OVERSCAN := 8
+var _terrain_atlas: Texture2D = null
+var _terrain_textures: Array[Texture2D] = []
 
 
 func _ready() -> void:
-	GameState.region_claimed.connect(func(_id): queue_redraw())
+	GameState.region_claimed.connect(func(_id): _refresh_terrain_tiles())
 	GameState.building_completed.connect(_on_building_completed)
 	GameState.farm_fields_changed.connect(func(_c): queue_redraw())
+	_load_terrain_textures()
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	_grass_base = _load_texture("res://assets/tiles/grass_base.png")
+
+
+func _load_terrain_textures() -> void:
+	_terrain_textures.clear()
+	_terrain_atlas = _load_texture_fresh(ATLAS_PATH)
+	for tile_id in TerrainTile.size():
+		var path: String = TILE_PATHS.get(tile_id, "")
+		var tex := _load_texture_fresh(path) if path != "" else null
+		if tex == null and _terrain_atlas != null:
+			var atlas_img := _terrain_atlas.get_image()
+			if atlas_img != null and not atlas_img.is_empty():
+				var region := atlas_img.get_region(Rect2i(
+						tile_id * IsoUtils.TILE_WIDTH, 0,
+						IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT))
+				tex = ImageTexture.create_from_image(region)
+		_terrain_textures.append(tex)
+
+
+## Lädt PNGs immer frisch von der Festplatte (umgeht Godots Resource-Cache).
+func _load_texture_fresh(path: String) -> Texture2D:
+	var global_path := ProjectSettings.globalize_path(path)
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(global_path)
+		if img != null and not img.is_empty():
+			return ImageTexture.create_from_image(img)
+	if ResourceLoader.exists(path):
+		return load(path)
+	return null
 
 
 func _load_texture(path: String) -> Texture2D:
-	if ResourceLoader.exists(path):
-		return load(path)
-	if FileAccess.file_exists(path):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-		if img != null:
-			return ImageTexture.create_from_image(img)
-	return null
+	return _load_texture_fresh(path)
 
 
 func get_map_size() -> int:
@@ -63,20 +102,16 @@ func get_center_cell() -> Vector2i:
 	return Vector2i(s / 2 - 1, s / 2 - 1)
 
 
-## Obere linke Ecke der Zelle in Weltkoordinaten.
 func cell_to_world(cell: Vector2i) -> Vector2:
-	return Vector2(cell.x * TILE_SIZE, cell.y * TILE_SIZE)
+	return IsoUtils.cell_to_world(cell)
 
 
 func cell_to_world_center(cell: Vector2i) -> Vector2:
-	return cell_to_world(cell) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	return IsoUtils.cell_to_world_center(cell)
 
 
 func world_to_cell(world_pos: Vector2) -> Vector2i:
-	return Vector2i(
-			int(floor(world_pos.x / TILE_SIZE)),
-			int(floor(world_pos.y / TILE_SIZE))
-	)
+	return IsoUtils.world_to_cell(world_pos)
 
 
 func generate_terrain() -> void:
@@ -94,8 +129,8 @@ func generate_terrain() -> void:
 		if terrain.has(c) or occupied.has(c):
 			continue
 		terrain[c] = "tree" if rng.randf() > 0.45 else "rock"
+	_refresh_terrain_tiles()
 	terrain_changed.emit()
-	queue_redraw()
 
 
 func get_terrain(cell: Vector2i) -> String:
@@ -117,48 +152,92 @@ func is_walkable(cell: Vector2i) -> bool:
 	return not is_terrain_blocking(cell)
 
 
+func _terrain_to_tile_id(t: String) -> int:
+	match t:
+		"river":
+			return TerrainTile.RIVER
+		"tree":
+			return TerrainTile.TREE
+		"rock":
+			return TerrainTile.ROCK
+		_:
+			return TerrainTile.GRASS
+
+
+func _cell_to_tile_id(cell: Vector2i) -> int:
+	if roads.has(cell):
+		return TerrainTile.ROAD
+	return _terrain_to_tile_id(get_terrain(cell))
+
+
+func _refresh_terrain_tiles() -> void:
+	_load_terrain_textures()
+	queue_redraw()
+
+
+func _cell_diamond(cell: Vector2i) -> PackedVector2Array:
+	var top := cell_to_world(cell)
+	var hw := IsoUtils.half_w()
+	var hh := IsoUtils.half_h()
+	return PackedVector2Array([
+		top,
+		top + Vector2(hw, hh),
+		top + Vector2(0.0, hh * 2.0),
+		top + Vector2(-hw, hh),
+	])
+
+
 func _draw() -> void:
+	_draw_terrain()
+	_draw_farm_fields()
+
+	if current_mode != Mode.NONE:
+		var s := get_map_size()
+		var line_color := Color(0.0, 0.0, 0.0, 0.18)
+		for x in range(s):
+			for y in range(s):
+				draw_polyline(_cell_diamond(Vector2i(x, y)), line_color, 1.0, true)
+
+
+func _draw_terrain() -> void:
 	var s := get_map_size()
 	var pad := GROUND_OVERSCAN
 	for x in range(-pad, s + pad):
 		for y in range(-pad, s + pad):
-			var rect := Rect2(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-			if x < 0 or y < 0 or x >= s or y >= s:
-				draw_rect(rect, Color(0.55, 0.72, 0.42))
-				continue
 			var c := Vector2i(x, y)
-			var t: String = get_terrain(c)
-			match t:
-				"river":
-					draw_rect(rect, Color(0.22, 0.48, 0.88))
-					draw_rect(rect, Color(0.15, 0.35, 0.72), false, 2.0)
-				"tree":
-					draw_rect(rect, Color(0.42, 0.68, 0.32))
-					draw_circle(rect.position + Vector2(32, 28), 18, Color(0.18, 0.48, 0.15))
-					draw_rect(Rect2(rect.position.x + 28, rect.position.y + 36, 8, 16),
-							Color(0.45, 0.3, 0.15))
-				"rock":
-					draw_rect(rect, Color(0.5, 0.52, 0.48))
-					draw_colored_polygon(PackedVector2Array([
-						rect.position + Vector2(18, 40),
-						rect.position + Vector2(32, 18),
-						rect.position + Vector2(48, 38),
-						rect.position + Vector2(36, 50),
-					]), Color(0.62, 0.64, 0.6))
-				_:
-					if roads.has(c):
-						draw_rect(rect, Color(0.42, 0.43, 0.46))
-					elif x >= 0 and y >= 0 and x < s and y < s:
-						draw_rect(rect, Color(0.72, 0.78, 0.62))
+			var tile_id := TerrainTile.GRASS
+			if x < 0 or y < 0 or x >= s or y >= s:
+				tile_id = TerrainTile.DIRT
+			else:
+				tile_id = _cell_to_tile_id(c)
+			var pos := IsoUtils.terrain_texture_pos(c)
+			var tex: Texture2D = null
+			if tile_id >= 0 and tile_id < _terrain_textures.size():
+				tex = _terrain_textures[tile_id]
+			if tex != null:
+				draw_texture_rect(tex,
+						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), false)
+			else:
+				if tile_id == TerrainTile.GRASS and c == Vector2i.ZERO:
+					push_warning("Gras-Textur nicht geladen – zeichne grünen Platzhalter. Pfad: %s"
+							% TILE_PATHS[TerrainTile.GRASS])
+				draw_colored_polygon(_cell_diamond(c), _fallback_terrain_color(tile_id))
 
-	_draw_farm_fields()
 
-	if current_mode != Mode.NONE:
-		var line_color := Color(0.0, 0.0, 0.0, 0.12)
-		for x in range(s):
-			for y in range(s):
-				var r := Rect2(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-				draw_rect(r, line_color, false, 1.0)
+func _fallback_terrain_color(tile_id: int) -> Color:
+	match tile_id:
+		TerrainTile.RIVER:
+			return Color(0.22, 0.48, 0.88)
+		TerrainTile.ROAD:
+			return Color(0.42, 0.43, 0.46)
+		TerrainTile.TREE:
+			return Color(0.42, 0.68, 0.32)
+		TerrainTile.ROCK:
+			return Color(0.5, 0.52, 0.48)
+		TerrainTile.DIRT:
+			return Color(0.55, 0.45, 0.35)
+		_:
+			return Color(0.72, 0.78, 0.62)
 
 
 func _draw_farm_fields() -> void:
@@ -170,13 +249,14 @@ func _draw_farm_fields() -> void:
 			var crop: String = str(f.get("crop", ""))
 			if crop == "":
 				continue
-			var rect := Rect2(fc.x * TILE_SIZE, fc.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+			var pts := _cell_diamond(fc)
 			var col: Color = GameData.get_crop_color(crop)
-			draw_rect(rect, col.darkened(0.08))
-			draw_rect(rect, col.lightened(0.12), false, 2.0)
+			draw_colored_polygon(pts, col.darkened(0.08))
+			draw_polyline(pts, col.lightened(0.12), 2.0, true)
 			var label: String = GameData.get_crop_name(crop).substr(0, 3)
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, 20),
-					label, HORIZONTAL_ALIGNMENT_LEFT, 52, 10, Color(0.1, 0.1, 0.1, 0.85))
+			var center := cell_to_world_center(fc)
+			draw_string(ThemeDB.fallback_font, center + Vector2(-10, 4),
+					label, HORIZONTAL_ALIGNMENT_LEFT, 28, 9, Color(0.1, 0.1, 0.1, 0.85))
 
 
 func start_build_mode(building_id: String) -> void:
@@ -368,9 +448,9 @@ func _spawn_building_visual(building_id: String, cell: Vector2i,
 
 	var size: Vector2i = GameData.get_building(building_id)["groesse"]
 	if building_id == "strasse":
-		node.z_index = 5
+		node.z_index = 5 + int(node.position.y) + size.y
 	else:
-		node.z_index = 10 + cell.y + size.y
+		node.z_index = 10 + int(node.position.y) + size.y
 
 	for x in range(size.x):
 		for y in range(size.y):
@@ -379,7 +459,7 @@ func _spawn_building_visual(building_id: String, cell: Vector2i,
 			if building_id == "strasse":
 				roads[c] = true
 				terrain.erase(c)
-	queue_redraw()
+	_refresh_terrain_tiles()
 
 
 func _on_building_completed(cell: Vector2i) -> void:
@@ -410,7 +490,7 @@ func _try_demolish(cell: Vector2i) -> void:
 		elif t == "rock":
 			GameState.queue_world_pickup(cell, "steine", 6.0)
 		terrain.erase(cell)
-		queue_redraw()
+		_refresh_terrain_tiles()
 		terrain_changed.emit()
 		return
 
@@ -422,14 +502,13 @@ func _try_demolish(cell: Vector2i) -> void:
 		return
 
 	GameState.unregister_building(node.cell)
-	var was_road := node.building_id == "strasse"
 	for x in range(node.size.x):
 		for y in range(node.size.y):
 			var c: Vector2i = node.cell + Vector2i(x, y)
 			occupied.erase(c)
 			roads.erase(c)
 	node.queue_free()
-	queue_redraw()
+	_refresh_terrain_tiles()
 
 
 func _create_ghost() -> void:
@@ -608,12 +687,14 @@ func _try_paint_farm_field(cell: Vector2i) -> void:
 
 func get_map_entry_position(edge: String) -> Vector2:
 	var s := get_map_size()
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
 	match edge:
 		"west":
-			return Vector2(-TILE_SIZE * 2, randf() * s * TILE_SIZE)
+			return cell_to_world_center(Vector2i(-2, rng.randi_range(0, s - 1)))
 		"east":
-			return Vector2(s * TILE_SIZE + TILE_SIZE, randf() * s * TILE_SIZE)
+			return cell_to_world_center(Vector2i(s, rng.randi_range(0, s - 1)))
 		"north":
-			return Vector2(randf() * s * TILE_SIZE, -TILE_SIZE * 2)
+			return cell_to_world_center(Vector2i(rng.randi_range(0, s - 1), -2))
 		_:
-			return Vector2(randf() * s * TILE_SIZE, s * TILE_SIZE + TILE_SIZE)
+			return cell_to_world_center(Vector2i(rng.randi_range(0, s - 1), s))
