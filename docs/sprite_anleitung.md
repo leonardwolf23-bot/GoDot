@@ -10,10 +10,10 @@ Diese Anleitung erklärt, wie du Grafiken zeichnest, die in **Vegane Stadt 2040*
 |-----|-------|-------|-------------|
 | Standard-Gebäude (3×3) | `assets/buildings/<id>.png` | **192×192 px** | Low Top-Down |
 | Straße (1×1) | `assets/buildings/strasse.png` | **64×64 px** | Draufsicht |
-| Boden-Tile | `assets/tiles/grass_base.png` | z. B. 64×64 oder 512×512 (kachelbar) | Draufsicht |
+| Boden-Tile (Gras) | `assets/tiles/iso/grass.png` | **64×32 px** (Raute) | Isometrisch |
 | Villager | `assets/test/villager/...` | **124×124 px** pro Frame | Low Top-Down, 8 Richtungen |
 
-**Wichtig:** Das Spiel nutzt **kein Isometrie-Raster**. Es ist ein **orthogonales 64×64-Raster** mit leicht angewinkelter Draufsicht in den Sprites.
+**Wichtig:** Das Spiel nutzt ein **isometrisches 64×32-Raster** (2:1-Rauten). Boden-Kacheln: siehe [`docs/ISO_TILES.md`](ISO_TILES.md). Gebäude-Sprites: Low Top-Down mit isometrischer Boden-Raute.
 
 ---
 

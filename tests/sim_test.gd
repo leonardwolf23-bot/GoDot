@@ -431,7 +431,7 @@ func _test_grid_rules() -> void:
 		var back: Vector2i = grid.world_to_cell(world)
 		if back != cell:
 			all_match = false
-	check(all_match, "Orthogonale Umrechnung Zelle -> Welt -> Zelle stimmt")
+	check(all_match, "Isometrische Umrechnung Zelle -> Welt -> Zelle stimmt")
 
 	grid.queue_free()
 
