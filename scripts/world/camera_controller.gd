@@ -13,7 +13,7 @@ const PAN_SPEED := 600.0
 const ZOOM_MIN := 0.5
 const ZOOM_MAX := 4.0          ## Tief hineinzoomen = alle Sprite-Details sehen.
 const ZOOM_STEP := 0.15
-const ZOOM_START := 1.8        ## Start nah dran (64×32-Iso-Kacheln).
+const ZOOM_START := 3.2        ## Start nah dran (32×64-Iso-Kacheln).
 
 var _middle_mouse_dragging := false
 

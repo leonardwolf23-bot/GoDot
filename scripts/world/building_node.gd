@@ -1,6 +1,6 @@
 class_name BuildingNode
 extends Node2D
-## Gebäude-Darstellung im isometrischen 64×32-Raster (Iso-Quader oder Sprite).
+## Gebäude-Darstellung im isometrischen 32×64-Raster (Iso-Quader oder Sprite).
 
 var building_id: String = ""
 var cell: Vector2i = Vector2i.ZERO

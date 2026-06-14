@@ -1,10 +1,10 @@
 class_name IsoUtils
 extends RefCounted
-## Isometrische Koordinaten für 64×32-Rauten (2:1).
+## Isometrische Koordinaten für 32×64-Rauten (TileMap-Maß).
 ## Ursprung einer Zelle = nördliche Spitze der Raute (klassisches Iso-Grid).
 
-const TILE_WIDTH := 64
-const TILE_HEIGHT := 32
+const TILE_WIDTH := 32
+const TILE_HEIGHT := 64
 
 
 static func half_w() -> float:
@@ -62,9 +62,9 @@ static func footprint_top_left_bbox(size: Vector2i) -> Vector2:
 	return Vector2(min_x, min_y)
 
 
-## Textur-Bounding-Box oben links für eine Boden-Kachel.
-static func terrain_texture_pos(cell: Vector2i) -> Vector2:
-	return cell_to_world(cell) + Vector2(-half_w(), 0.0)
+## Zeichenposition für eine Boden-Textur in Original-Pixelgröße (zentriert auf der Zelle).
+static func terrain_texture_pos(cell: Vector2i, tex_size: Vector2) -> Vector2:
+	return cell_to_world_center(cell) - tex_size * 0.5
 
 
 static func depth_key(cell: Vector2i, size: Vector2i = Vector2i.ONE) -> int:

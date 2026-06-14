@@ -1,6 +1,6 @@
-# Isometrisches Tilemap-System (64×32)
+# Isometrisches Tilemap-System (32×64)
 
-Das Spiel nutzt ein **isometrisches 64×32-Raster** mit einem gemeinsamen Koordinatensystem
+Das Spiel nutzt ein **isometrisches 32×64-Raster** (Breite × Höhe pro Kachel) mit einem gemeinsamen Koordinatensystem
 für Boden, Gebäude und Mausklicks. Die Spiellogik arbeitet weiterhin in
 **logischen Gitterzellen** – nur die Darstellung ist isometrisch.
 
@@ -13,10 +13,10 @@ als **Iso-Quader** (oder PNG-Sprite mit passender Boden-Raute) auf dieser Grundf
 
 | Eigenschaft | Wert |
 |---|---|
-| Rastermaß | **64 × 32 px** (Breite × Höhe der Raute) |
-| Projektion | 2:1-Isometrie (klassische Stadtbuilder-Ansicht) |
-| 1×1-Gebäude | Boden-Raute **64 px** breit |
-| 3×3-Gebäude (Standard) | Boden-Raute **192 px** breit |
+| Rastermaß | **32 × 64 px** (Breite × Höhe der Raute) |
+| Projektion | Isometrie (wie in Godot TileMap) |
+| 1×1-Gebäude | Boden-Raute **32 px** breit |
+| 3×3-Gebäude (Standard) | Boden-Raute **96 px** breit |
 
 ---
 
@@ -36,14 +36,14 @@ Alle Terrain-Kacheln liegen in **`assets/tiles/iso/`**:
 
 ### Neue Kachel hinzufügen
 
-1. Erstelle eine **64×32 px PNG** mit transparenter Fläche außerhalb der Raute.
-2. Die **Raute** füllt die volle 64×32-Fläche (Spitze oben, Spitze unten).
+1. Erstelle eine **32×64 px PNG** mit transparenter Fläche außerhalb der Raute.
+2. Die **Raute** füllt die volle 32×64-Fläche (Spitze oben, Spitze unten).
 3. Lege die Datei in `assets/tiles/iso/` ab, z. B. `grass.png`.
 4. Spiel neu starten – **nur die Einzeldatei reicht** (z. B. `grass.png`).
 
 Optional: `terrain_atlas.png` nur als Fallback, wenn eine Einzeldatei fehlt.
 
-**Wichtig:** Das Spiel lädt **`grass.png` direkt**, nicht nur den Atlas. Nach dem Ersetzen Godot kurz neu laden oder das Spiel neu starten.
+**Wichtig:** PNGs werden **1:1 in Originalgröße** gezeichnet – nicht gestreckt. Größe muss exakt **32×64** sein.
 
 **Vorlage:** `assets/templates/tile_1x1_iso_grid.png` (Rastervorlage zum Pixeln).
 

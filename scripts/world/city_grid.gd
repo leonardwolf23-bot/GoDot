@@ -1,6 +1,6 @@
 class_name CityGrid
 extends Node2D
-## CityGrid – isometrisches 64×32-Raster (klassische Iso-Projektion, Atlas-Boden).
+## CityGrid – isometrisches 32×64-Raster (klassische Iso-Projektion, Atlas-Boden).
 
 enum Mode { NONE, BUILD, DEMOLISH, FARM_PAINT }
 
@@ -210,13 +210,12 @@ func _draw_terrain() -> void:
 				tile_id = TerrainTile.DIRT
 			else:
 				tile_id = _cell_to_tile_id(c)
-			var pos := IsoUtils.terrain_texture_pos(c)
 			var tex: Texture2D = null
 			if tile_id >= 0 and tile_id < _terrain_textures.size():
 				tex = _terrain_textures[tile_id]
 			if tex != null:
-				draw_texture_rect(tex,
-						Rect2(pos, Vector2(IsoUtils.TILE_WIDTH, IsoUtils.TILE_HEIGHT)), false)
+				var tex_size := tex.get_size()
+				draw_texture(tex, IsoUtils.terrain_texture_pos(c, tex_size))
 			else:
 				if tile_id == TerrainTile.GRASS and c == Vector2i.ZERO:
 					push_warning("Gras-Textur nicht geladen – zeichne grünen Platzhalter. Pfad: %s"
